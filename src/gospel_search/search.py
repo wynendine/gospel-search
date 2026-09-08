@@ -117,29 +117,76 @@ def hyde(query: str) -> str:
 # --- Retrieval halves ------------------------------------------------------
 
 
+_columns: tuple[np.ndarray, np.ndarray, np.ndarray, list[str]] | None = None
+
+KIND_CODES = {"talk": 0, "verse": 1, "summary": 2}
+
+
+def filter_columns(conn):
+    """Kind, year, and speaker code per vector row, built once.
+
+    Filtering used to pull every matching vec_row out of SQLite through a
+    Python generator — for `--source talks` that is 146k integers crossing the
+    interpreter boundary on every query, which made a *filtered* search 8x
+    slower than an unfiltered one. These arrays cost ~950 KB and turn the
+    common filters into vectorized comparisons.
+
+    Speakers are dictionary-encoded: 640 distinct names over 146k chunks, so a
+    substring match scans the 640 names and the result is an `isin` over codes,
+    instead of a leading-wildcard LIKE that no index can serve.
+    """
+    global _columns
+    if _columns is None:
+        rows = max(conn.execute("SELECT MAX(vec_row) FROM chunks").fetchone()[0] or -1, -1) + 1
+        kind = np.full(rows, -1, dtype=np.int8)
+        year = np.zeros(rows, dtype=np.int16)
+        speaker = np.full(rows, -1, dtype=np.int16)
+        names: list[str] = []
+        codes: dict[str, int] = {}
+
+        for vec_row, k, date, who in conn.execute(
+            "SELECT vec_row, kind, date, speaker FROM chunks WHERE vec_row IS NOT NULL"
+        ):
+            kind[vec_row] = KIND_CODES.get(k, -1)
+            year[vec_row] = int(date[:4]) if date[:4].isdigit() else 0
+            if who:
+                code = codes.get(who)
+                if code is None:
+                    code = codes[who] = len(names)
+                    names.append(who)
+                speaker[vec_row] = code
+
+        _columns = (kind, year, speaker, names)
+    return _columns
+
+
 def dense(conn, vectors, query_vector, filters: Filters, k: int = DENSE_K):
     scores = vectors @ query_vector
 
     if filters.active:
-        where, params = filters.sql()
-        allowed = np.fromiter(
-            (
-                row[0]
-                for row in conn.execute(
-                    # vec_row is NULL only for chunks added since the last
-                    # build finalized; they have no vector to match against.
-                    f"SELECT c.vec_row FROM chunks c "
-                    f"WHERE {where} AND c.vec_row IS NOT NULL",
-                    params,
-                )
-            ),
-            dtype=np.int64,
-        )
-        allowed = allowed[allowed < scores.shape[0]]
-        if allowed.size == 0:
+        kind, year, speaker, names = filter_columns(conn)
+        mask = np.ones(scores.shape[0], dtype=bool)
+
+        if filters.source == "talks":
+            mask &= kind == KIND_CODES["talk"]
+        elif filters.source == "scriptures":
+            mask &= (kind == KIND_CODES["verse"]) | (kind == KIND_CODES["summary"])
+        # Scripture rows carry year 0, so a date bound excludes them — which is
+        # the right reading of "conference talks after 2010".
+        if filters.after:
+            mask &= year >= filters.after
+        if filters.before:
+            mask &= (year <= filters.before) & (year > 0)
+
+        if filters.speaker:
+            needle = filters.speaker.lower()
+            wanted = [i for i, name in enumerate(names) if needle in name.lower()]
+            if not wanted:
+                return []
+            mask &= np.isin(speaker, np.array(wanted, dtype=np.int16))
+
+        if not mask.any():
             return []
-        mask = np.zeros(scores.shape[0], dtype=bool)
-        mask[allowed] = True
         scores = np.where(mask, scores, -np.inf)
 
     k = min(k, scores.shape[0])
