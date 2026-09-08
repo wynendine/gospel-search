@@ -52,6 +52,15 @@ def cmd_search(args) -> None:
         volume=args.volume,
         book=args.book,
     )
+    # A bare scripture reference has exactly one right answer, so it resolves
+    # directly — no planner, no embedding, no synthesis.
+    conn = idx.connect(readonly=True)
+    findings = research_mod.resolve_reference(conn, args.query)
+    if findings is not None:
+        print(f"{DIM}     [reference] {findings.coverage.summary()}{RESET}")
+        _print_results(findings.results)
+        return
+
     if args.no_plan:
         plan = Plan(topic=args.query, filters=filters)
     else:
@@ -84,6 +93,10 @@ def cmd_search(args) -> None:
         line = f"complete: all {findings.total_matches} matches · " + line
     print(f"{DIM}     [{plan.intent}] {line}{RESET}")
 
+    _print_results(results)
+
+
+def _print_results(results) -> None:
     for i, result in enumerate(results, start=1):
         meta = []
         if result.speaker:

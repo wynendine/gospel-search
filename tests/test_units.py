@@ -275,6 +275,36 @@ def test_plan() -> None:
     check("plan: default filters are inert", Plan().filters.active is False)
 
 
+# --- Scripture reference parsing -------------------------------------------
+# A reference has one right answer, so this must never fall through to search.
+
+def test_reference() -> None:
+    from gospel_search.reference import PATTERN, _normalize
+
+    def parts(text):
+        m = PATTERN.match(text)
+        if not m: return None
+        return (m.group("book").strip(), m.group("chapter"), m.group("verse"), m.group("end"))
+
+    check("ref: book chapter verse", parts("Alma 32:21") == ("Alma","32","21",None))
+    check("ref: ampersand book", parts("D&C 121:7") == ("D&C","121","7",None))
+    check("ref: numbered book", parts("1 Ne 3:7") == ("1 Ne","3","7",None))
+    check("ref: trailing period", parts("1 Ne. 3:7") == ("1 Ne.","3","7",None))
+    check("ref: verse range", parts("Moroni 10:3-5") == ("Moroni","10","3","5"))
+    check("ref: en dash range", parts("Moroni 10:3\u20135") == ("Moroni","10","3","5"))
+    check("ref: chapter only", parts("Alma 32") == ("Alma","32",None,None))
+    check("ref: hyphenated book", parts("JS-H 1:17") == ("JS-H","1","17",None))
+    check("ref: case insensitive", parts("moroni 10:4") == ("moroni","10","4",None))
+
+    check("ref: prose is not a reference", parts("the natural man is an enemy to God") is None)
+    check("ref: question is not a reference", parts("what did Nelson say about faith") is None)
+    check("ref: bare number is not a reference", parts("121") is None)
+
+    check("ref: normalize folds punctuation", _normalize("1 Ne.") == "1ne")
+    check("ref: normalize keeps ampersand", _normalize("D&C") == "d&c")
+    check("ref: normalize folds case", _normalize("Alma") == _normalize("ALMA"))
+
+
 def main() -> int:
     for test in (
         test_fts_query,
@@ -287,6 +317,7 @@ def main() -> int:
         test_incremental,
         test_diversify,
         test_plan,
+        test_reference,
     ):
         print(f"\n{test.__name__}")
         test()

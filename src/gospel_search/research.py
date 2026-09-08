@@ -6,6 +6,7 @@ from dataclasses import dataclass, replace
 
 from .config import COMPARE_BUDGET, ENUMERATE_CAP, MAX_PER_DOC
 from . import index as idx
+from . import reference as ref
 from .plan import Plan
 from .search import (
     Coverage,
@@ -25,6 +26,35 @@ class Findings:
     total_matches: int | None = None  # only meaningful when exhaustive
     groups: dict[str, list[Result]] | None = None  # compare: results per entity
     note: str = ""  # a caveat the answer must not paper over
+
+
+def resolve_reference(conn, query: str) -> Findings | None:
+    """Return the exact verses if the query is a scripture reference.
+
+    A reference has one right answer, so it never reaches the planner or an
+    embedding — no LLM call, no ranking, no cost. Semantic search was actively
+    wrong here: "D&C 121:7" came back as 121:40 and "1 Ne 3:7" as 2 Nephi 7:10.
+    """
+    parsed = ref.parse(query, conn)
+    if parsed is None:
+        return None
+    ids = ref.lookup(conn, parsed)
+    if not ids:
+        return None
+
+    results = hydrate(conn, [(i, 0.0, {}) for i in ids])
+    plan = Plan(intent="reference", topic=parsed.citation())
+    return Findings(
+        plan=plan,
+        results=results,
+        coverage=Coverage(
+            passages=len(results),
+            documents=len({r.doc_id for r in results}),
+            candidates=len(ids),
+        ),
+        exhaustive=True,
+        total_matches=len(ids),
+    )
 
 
 def enumerate_matches(conn, plan: Plan, limit: int = ENUMERATE_CAP) -> Findings:
@@ -133,6 +163,11 @@ def investigate(
     """Run the retrieval strategy that the plan's intent calls for."""
     conn = conn or idx.connect(readonly=True)
     vectors = idx.load_vectors() if vectors is None else vectors
+
+    if plan.intent == "reference":
+        found = resolve_reference(conn, plan.topic)
+        if found is not None:
+            return found
 
     if plan.intent == "enumerate" and plan.literal_terms:
         return enumerate_matches(conn, plan)
