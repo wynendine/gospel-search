@@ -8,8 +8,10 @@ import textwrap
 from . import answer as answer_mod
 from . import build as build_mod
 from . import index as idx
+from . import research as research_mod
 from . import search as search_mod
 from .config import MAX_PER_DOC
+from .plan import Plan, plan as make_plan
 
 BOLD, DIM, CYAN, YELLOW, RESET = "\033[1m", "\033[2m", "\033[36m", "\033[33m", "\033[0m"
 
@@ -50,29 +52,37 @@ def cmd_search(args) -> None:
         volume=args.volume,
         book=args.book,
     )
-    results, cover = search_mod.search_with_coverage(
+    if args.no_plan:
+        plan = Plan(topic=args.query, filters=filters)
+    else:
+        plan = make_plan(args.query, override=filters)
+        if args.explain:
+            print(f"{DIM}     plan: {plan.describe()}{RESET}")
+
+    findings = research_mod.investigate(
         args.query,
+        plan,
         n=args.n,
-        filters=filters,
         use_hyde=not args.no_hyde,
         use_rerank=not args.no_rerank,
-        max_per_doc=args.max_per_doc,
     )
+    results = findings.results
 
     if not results:
         print("No matches.")
         return
 
     if not args.no_answer:
-        text = answer_mod.answer(
-            args.query, search_mod.context_for_answer(results)
-        )
+        text = answer_mod.answer(args.query, findings)
         print(f"\n{BOLD}{text}{RESET}\n")
         print(DIM + "─" * 88 + RESET)
 
     # What the answer actually saw. Without this the output reads like a survey
     # of the whole corpus regardless of how thin the evidence was.
-    print(f"{DIM}     {cover.summary()}{RESET}")
+    line = findings.coverage.summary()
+    if findings.exhaustive:
+        line = f"complete: all {findings.total_matches} matches · " + line
+    print(f"{DIM}     [{plan.intent}] {line}{RESET}")
 
     for i, result in enumerate(results, start=1):
         meta = []
@@ -177,6 +187,13 @@ def main(argv=None) -> None:
         help="cap passages from one talk/chapter (default 3; 0 disables)",
     )
     search.add_argument("--no-answer", action="store_true")
+    search.add_argument(
+        "--no-plan", action="store_true",
+        help="skip query planning; treat the query as a plain lookup",
+    )
+    search.add_argument(
+        "--explain", action="store_true", help="print the plan before searching"
+    )
     search.add_argument("--no-hyde", action="store_true")
     search.add_argument("--no-rerank", action="store_true")
     search.set_defaults(func=cmd_search)

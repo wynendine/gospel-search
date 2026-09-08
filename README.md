@@ -78,21 +78,56 @@ gospel search "faith like a seed" --source scriptures --no-answer
 gospel serve                       # web UI at localhost:8000
 ```
 
+```bash
+gospel search "every reference to charity in the Book of Mormon"
+gospel search "compare Bednar and Holland on faith" --explain
+```
+
 Useful flags: `--no-answer` (passages only), `--no-rerank` and `--no-hyde` (drop
-the LLM stages — much faster, noticeably worse), `--source`, `--speaker`,
-`--after` / `--before`, `-n`.
+the LLM stages — much faster, noticeably worse), `--explain` (show the plan),
+`--no-plan`, `--source`, `--volume`, `--book`, `--speaker`, `--after` /
+`--before`, `--max-per-doc`, `-n`.
+
+Scoping can be written into the question — "in the Book of Mormon", "since
+2015", "what did Nelson say" — and the planner extracts it. Explicit flags
+always win over what it infers.
 
 ## How it works
 
+A question is first *classified*, because different questions need different
+retrieval. Applying one strategy to all of them is how "every reference to X"
+quietly becomes "the ten best passages about X".
+
 ```
-query
+question
+  └─ plan ─────────── Claude picks an intent and pulls scoping out of the prose
+       ├─ lookup ──── find one half-remembered passage      → rank, top-k
+       ├─ enumerate ─ list every occurrence of a term       → exact, complete
+       ├─ compare ─── contrast two or more speakers         → one search each
+       └─ thematic ── survey teaching on a subject          → breadth, 1/source
+
+retrieval (lookup / compare / thematic)
   ├─ HyDE ─────────── Claude writes the passage you probably mean
   ├─ dense ────────── query + HyDE embedded, averaged, matmul over all vectors
   ├─ BM25 ─────────── SQLite FTS5 over the same chunks
   ├─ RRF ──────────── fuse the two ranked lists
   ├─ rerank ───────── Claude scores the top 50 for actual relevance
-  └─ answer ───────── Claude writes a cited summary; passages shown below
+  ├─ diversify ────── cap passages per talk/chapter so one can't take every slot
+  └─ answer ───────── cited summary, written for the intent; passages below
 ```
+
+`--explain` prints the plan. `--no-plan` skips it and treats the query as a
+plain lookup.
+
+**Enumeration is exact.** "Every reference to charity in the Book of Mormon"
+returns all 22 matches in canonical order and says so; it is a FTS term match
+with a real count, not a ranking. For a *concept* rather than a fixed word the
+answer says explicitly that it is not a complete list, because it can't be.
+
+**Comparison retrieves per person.** A single blended query for "compare Bednar
+and Holland on faith" returns passages about faith, most by neither man — only
+3 of 10 in testing. Scoping one search per speaker gives 16 passages from 16
+talks spanning 1996-2024.
 
 **Chunking** does most of the work. Each chunk is a 3-unit sliding window
 (paragraphs for talks, verses for scripture) but is *cited and displayed* as its

@@ -226,6 +226,55 @@ def test_incremental() -> None:
     check("incremental: document metadata updated", title == "Renamed")
 
 
+# --- Diversity cap ---------------------------------------------------------
+# The property: relevance still sets the order; the cap only decides who gets
+# crowded out when one document would otherwise take every slot.
+
+def test_diversify() -> None:
+    from gospel_search.search import diversify
+
+    def r(chunk_id, doc_id):
+        return chunker.Chunk("k", "talk", str(chunk_id), 0, "c", "u", "d", "w", "e"), doc_id
+
+    class Fake:
+        def __init__(self, cid, did): self.chunk_id, self.doc_id = cid, did
+        def __repr__(self): return f"c{self.chunk_id}/d{self.doc_id}"
+
+    # One document dominating the ranking.
+    ranked = [Fake(1,10), Fake(2,10), Fake(3,10), Fake(4,10), Fake(5,20), Fake(6,30)]
+    out = diversify(ranked, max_per_doc=2, n=4)
+    check("diversify: caps one document", [x.doc_id for x in out] == [10,10,20,30], f"got {out}")
+    check("diversify: preserves rank order", [x.chunk_id for x in out][:2] == [1,2])
+
+    out = diversify(ranked, max_per_doc=0, n=3)
+    check("diversify: 0 disables the cap", [x.chunk_id for x in out] == [1,2,3])
+
+    # Too few distinct documents to fill n — backfill rather than return short.
+    thin = [Fake(1,10), Fake(2,10), Fake(3,10)]
+    out = diversify(thin, max_per_doc=1, n=3)
+    check("diversify: backfills when sources run out", len(out) == 3, f"got {out}")
+    check("diversify: backfill keeps the best first", out[0].chunk_id == 1)
+
+    check("diversify: empty input", diversify([], 2, 5) == [])
+
+
+# --- Plan describe / fallback ----------------------------------------------
+
+def test_plan() -> None:
+    from gospel_search.plan import Plan
+    from gospel_search.search import Filters
+
+    p = Plan(intent="enumerate", topic="charity", literal_terms=["charity"],
+             filters=Filters(volume="Book of Mormon", source="scriptures"))
+    d = p.describe()
+    check("plan: describe names the intent", "intent=enumerate" in d)
+    check("plan: describe shows scoping", "volume=Book of Mormon" in d)
+    check("plan: describe omits unset filters", "speaker=" not in d)
+
+    check("plan: default intent is lookup", Plan().intent == "lookup")
+    check("plan: default filters are inert", Plan().filters.active is False)
+
+
 def main() -> int:
     for test in (
         test_fts_query,
@@ -236,6 +285,8 @@ def main() -> int:
         test_periods,
         test_schema,
         test_incremental,
+        test_diversify,
+        test_plan,
     ):
         print(f"\n{test.__name__}")
         test()

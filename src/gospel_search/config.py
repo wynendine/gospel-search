@@ -45,6 +45,11 @@ ANSWER_K = 12  # reranked passages handed to the synthesizer
 # Raise it when you want depth in one source, lower it for breadth.
 MAX_PER_DOC = 3
 
+# Query planning
+PLAN_MODEL = "claude-opus-5"
+COMPARE_BUDGET = 8   # passages retrieved per entity in a comparison
+ENUMERATE_CAP = 200  # hard ceiling on an exhaustive listing
+
 WINDOW = 1  # units of context on each side of the anchor (1 => 3-unit window)
 
 # --- Sources ---------------------------------------------------------------
