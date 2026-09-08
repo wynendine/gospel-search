@@ -117,7 +117,7 @@ class Result:
     lexical_rank: int | None = None
     fused: float = 0.0
     rerank: float | None = None
-    reasons: list[str] = field(default_factory=list)
+    facet: str = ""  # thematic: the sub-question that surfaced this passage
 
     @property
     def score(self) -> float:

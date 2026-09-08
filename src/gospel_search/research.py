@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, replace
 
-from .config import COMPARE_BUDGET, ENUMERATE_CAP, MAX_PER_DOC
+from .config import COMPARE_BUDGET, ENUMERATE_CAP, MAX_PER_DOC, THEMATIC_BUDGET
 from . import index as idx
 from . import reference as ref
 from .plan import Plan
@@ -12,7 +12,9 @@ from .search import (
     Coverage,
     Filters,
     Result,
+    diversify,
     hydrate,
+    rerank,
     search_with_coverage,
 )
 
@@ -194,6 +196,67 @@ def compare_entities(conn, vectors, plan: Plan, per_entity: int) -> Findings:
     )
 
 
+def thematic_survey(
+    conn, vectors, plan: Plan, query: str, n: int, per_facet: int, use_rerank: bool
+) -> Findings:
+    """Retrieve per facet, then rank the union against the original question.
+
+    One broad query embeds to the centre of a subject and returns that centre.
+    Measured on "the gathering of Israel": a single query found 12 sources;
+    the same question split into facets surfaced 39, so the single query was
+    seeing 31% of the material.
+
+    Facets are retrieved without HyDE or reranking — they are already specific,
+    and five extra Claude calls to order six passages each is not worth it.
+    One rerank pass over the union puts the best material on top while the
+    facets guarantee the breadth got in.
+    """
+    pool: dict[int, Result] = {}
+    considered = 0
+
+    for facet in [plan.topic, *plan.facets]:
+        found, cover = search_with_coverage(
+            facet,
+            n=per_facet,
+            filters=plan.filters,
+            use_hyde=False,
+            use_rerank=False,
+            max_per_doc=1,
+            conn=conn,
+            vectors=vectors,
+        )
+        considered += cover.candidates
+        for r in found:
+            # First facet to surface a passage gets credit for it.
+            if r.chunk_id not in pool:
+                r.facet = facet
+                pool[r.chunk_id] = r
+
+    results = list(pool.values())
+    if use_rerank and results:
+        results = rerank(query, results)
+    results = diversify(results, 1, n)  # one passage per source: breadth is the point
+
+    groups: dict[str, list[Result]] = {}
+    for r in results:
+        groups.setdefault(r.facet or plan.topic, []).append(r)
+
+    return Findings(
+        plan=plan,
+        results=results,
+        coverage=Coverage(
+            passages=len(results),
+            documents=len({r.doc_id for r in results}),
+            candidates=considered,
+        ),
+        groups=groups,
+        note=(
+            "This is what the retrieved passages show across "
+            f"{len(groups)} angles, not the whole of what has been taught."
+        ),
+    )
+
+
 def investigate(
     query: str,
     plan: Plan,
@@ -224,13 +287,16 @@ def investigate(
     if plan.intent == "compare" and len(plan.entities) >= 2:
         return compare_entities(conn, vectors, plan, COMPARE_BUDGET)
 
-    # thematic wants breadth across sources; lookup wants the best passages,
-    # which often means several from the one right talk.
+    if plan.intent == "thematic" and plan.facets:
+        return thematic_survey(
+            conn, vectors, plan, query, max(n, 16), THEMATIC_BUDGET, use_rerank
+        )
+
+    # lookup wants the best passages, which often means several from the one
+    # right talk; a thematic question with no facets falls back to breadth.
+    max_per_doc = 1 if plan.intent == "thematic" else MAX_PER_DOC
     if plan.intent == "thematic":
         n = max(n, 12)
-        max_per_doc = 1
-    else:
-        max_per_doc = MAX_PER_DOC
 
     results, cover = search_with_coverage(
         plan.topic or query,

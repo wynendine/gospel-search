@@ -129,6 +129,14 @@ and Holland on faith" returns passages about faith, most by neither man — only
 3 of 10 in testing. Scoping one search per speaker gives 16 passages from 16
 talks spanning 1996-2024.
 
+**Thematic surveys retrieve per facet.** One broad query embeds to the centre of
+a subject and returns that centre. Measured on "the gathering of Israel": a
+single query found 12 sources, while the same question split into six facets —
+temple work, missionary work, the scattering, covenant and adoption, who
+participates, gathering to Zion — surfaced 39. The single query was seeing 31%
+of the material. Facets are retrieved without HyDE or reranking (they are
+already specific), then one rerank pass orders the union.
+
 **Chunking** does most of the work. Each chunk is a 3-unit sliding window
 (paragraphs for talks, verses for scripture) but is *cited and displayed* as its
 center unit — big enough to embed meaningfully, precise enough to link to. Each

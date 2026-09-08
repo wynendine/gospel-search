@@ -54,6 +54,12 @@ Rules:
   and the caller needs to know the difference.
 - For citations, put the scripture reference in `topic` exactly as given
   ("Alma 32:21"), and nothing else.
+- `facets` matters only for thematic: 4-6 distinct sub-questions that together
+  cover the subject, each phrased as something you would search for on its own.
+  Make them genuinely different angles, not restatements — for "the gathering
+  of Israel" that means temple and family history work, missionary work, the
+  scattering itself, covenant and adoption, and who is asked to participate.
+  One broad query finds one facet and misses the rest.
 - `entities` matters only for compare: the speakers or sources to contrast,
   as surnames for people ("Bednar", "Holland").
 - Volumes must be exactly one of: {volumes}. Books are single books like
@@ -72,6 +78,7 @@ SCHEMA = {
         "topic": {"type": "string"},
         "literal_terms": {"type": "array", "items": {"type": "string"}},
         "entities": {"type": "array", "items": {"type": "string"}},
+        "facets": {"type": "array", "items": {"type": "string"}},
         # A nullable field cannot also carry an enum here, so the allowed
         # values are enforced below rather than by the schema.
         "source": {"type": ["string", "null"]},
@@ -82,7 +89,7 @@ SCHEMA = {
         "before": {"type": ["integer", "null"]},
     },
     "required": [
-        "intent", "topic", "literal_terms", "entities",
+        "intent", "topic", "literal_terms", "entities", "facets",
         "source", "volume", "book", "speaker", "after", "before",
     ],
     "additionalProperties": False,
@@ -95,6 +102,7 @@ class Plan:
     topic: str = ""
     literal_terms: list[str] = field(default_factory=list)
     entities: list[str] = field(default_factory=list)
+    facets: list[str] = field(default_factory=list)
     filters: Filters = field(default_factory=Filters)
 
     def describe(self) -> str:
@@ -103,6 +111,8 @@ class Plan:
             bits.append(f"terms={self.literal_terms}")
         if self.entities:
             bits.append(f"entities={self.entities}")
+        if self.facets:
+            bits.append(f"facets={len(self.facets)}")
         for name in ("source", "volume", "book", "speaker", "after", "before"):
             value = getattr(self.filters, name)
             if value:
@@ -172,5 +182,6 @@ def plan(query: str, *, override: Filters | None = None) -> Plan:
         topic=data.get("topic") or query,
         literal_terms=[t for t in data.get("literal_terms", []) if t],
         entities=[e for e in data.get("entities", []) if e],
+        facets=[f for f in data.get("facets", []) if f],
         filters=filters,
     )

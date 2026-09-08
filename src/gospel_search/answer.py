@@ -60,22 +60,32 @@ reader needs to know which they are getting.
 - Anchor every characterization in a quoted phrase with its citation.""",
     "thematic": """Summarize the teaching on this subject.
 
-- Organize by idea, not by speaker or by rank.
-- Note where sources agree, and name any real differences in emphasis.
-- Prefer breadth: draw on as many distinct sources as the passages allow.
-- Be clear that this is what the retrieved passages show, not the whole of what \
-has been taught.""",
+- The passages arrive grouped by the angle that surfaced them. Treat those as a
+  starting structure, not a mandate: merge angles that turned out to say the
+  same thing, and split one that clearly holds two ideas.
+- Organize by idea, never by speaker or by rank.
+- Prefer breadth. Drawing on many sources is the point of this shape of answer,
+  so do not spend the whole response on the two strongest passages.
+- Note where sources agree, and name any real difference in emphasis. "They all
+  testify of Christ" is true of everything here and worth nothing.
+- Where the teaching developed over time, say so and date it.
+- Be clear this is what the retrieved passages show, not the whole of what has
+  been taught.""",
 }
 
 
 def format_passages(results, groups=None) -> str:
-    """Number passages for citation, grouped by entity when comparing."""
+    """Number passages for citation, grouped when the intent has groups.
+
+    Comparisons group by person, thematic surveys by facet. Numbering runs
+    across the whole set so a citation means the same thing either way.
+    """
     if groups:
         blocks, index = [], 1
-        for entity, items in groups.items():
+        for label, items in groups.items():
             if not items:
                 continue
-            blocks.append(f"--- {entity} ---")
+            blocks.append(f"--- {label} ---")
             for r in items:
                 blocks.append(f"[{index}] {r.citation}\n{r.window_text}")
                 index += 1

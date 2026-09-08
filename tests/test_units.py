@@ -334,6 +334,32 @@ def test_citations() -> None:
     check("cite: inline range expands", ranged and ranged[0].verses == (21, 22, 23))
 
 
+# --- Thematic facet grouping -----------------------------------------------
+
+def test_thematic_grouping() -> None:
+    from gospel_search.answer import format_passages
+
+    class Fake:
+        def __init__(self, cite, text):
+            self.citation, self.window_text, self.kind, self.date = cite, text, "talk", "2020-04-01"
+
+    groups = {
+        "missionary work": [Fake("A 1:1", "alpha")],
+        "temple work": [Fake("B 2:2", "beta"), Fake("C 3:3", "gamma")],
+    }
+    out = format_passages([], groups)
+    check("thematic: facet labels appear", "--- missionary work ---" in out)
+    check("thematic: numbering is continuous across groups",
+          "[1] A 1:1" in out and "[2] B 2:2" in out and "[3] C 3:3" in out, out)
+
+    empty = {"a": [], "b": [Fake("X 1:1", "x")]}
+    out = format_passages([], empty)
+    check("thematic: empty groups are skipped", "--- a ---" not in out and "[1] X 1:1" in out)
+
+    flat = format_passages([Fake("Z 9:9", "zed")], None)
+    check("thematic: ungrouped still numbers", flat.startswith("[1] Z 9:9"))
+
+
 def main() -> int:
     for test in (
         test_fts_query,
@@ -348,6 +374,7 @@ def main() -> int:
         test_plan,
         test_reference,
         test_citations,
+        test_thematic_grouping,
     ):
         print(f"\n{test.__name__}")
         test()

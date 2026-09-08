@@ -49,6 +49,7 @@ MAX_PER_DOC = 3
 PLAN_MODEL = "claude-opus-5"
 COMPARE_BUDGET = 8   # passages retrieved per entity in a comparison
 ENUMERATE_CAP = 200  # hard ceiling on an exhaustive listing
+THEMATIC_BUDGET = 6  # passages retrieved per facet of a thematic survey
 
 WINDOW = 1  # units of context on each side of the anchor (1 => 3-unit window)
 
