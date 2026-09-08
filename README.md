@@ -196,8 +196,12 @@ document. It carries existing vectors across, so it never re-embeds.
 ## Tuning
 
 `gospel eval` runs `tests/queries.yaml` and reports hit@1, recall@10, and MRR.
-The baseline on the full corpus is **hit@1 91%, recall@10 100%, MRR 0.955**
-across 22 cases. Expect small run-to-run variation: HyDE and reranking are both
+The baseline on the full corpus is **hit@1 91%, recall@10 100%, MRR ~0.95**
+across 22 cases. `--no-hyde --no-rerank` runs the same set on retrieval alone
+(hit@1 59%, MRR 0.703) — it costs almost nothing and is the right way to judge
+a change to chunking or fusion, but it is a diagnostic rather than a target.
+Paraphrase questions are *expected* to fail there; recovering them is precisely
+what HyDE and reranking do. Expect small run-to-run variation: HyDE and reranking are both
 LLM calls, so a borderline case can trade places between rank 1 and 2.
 Add a case every time the tool misses something you knew was there — that's what
 keeps tuning honest rather than vibes-based. Compare configurations with

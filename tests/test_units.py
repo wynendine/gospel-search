@@ -33,7 +33,22 @@ def test_fts_query() -> None:
     check("fts: apostrophes survive", fts_query("Lehi's dream") == '"Lehi\'s" OR "dream"')
     check(
         "fts: punctuation dropped",
-        fts_query('what did he say -- "faith"?') == '"what" OR "did" OR "he" OR "say" OR "faith"',
+        fts_query('what did he say -- "faith"?') == '"say" OR "faith"',
+    )
+    # Terms are OR-ed, so a stopword left in matches most of the corpus and
+    # drags BM25's top hits away from anything the query is actually about.
+    check(
+        "fts: stopwords dropped",
+        fts_query("the passage where a prophet is told his suffering")
+        == '"passage" OR "prophet" OR "told" OR "suffering"',
+    )
+    check(
+        "fts: content words that look common are kept",
+        fts_query("the word of God and the Lord") == '"word" OR "God" OR "Lord"',
+    )
+    check(
+        "fts: an all-stopword query keeps its literal reading",
+        fts_query("who is he") == '"who" OR "is" OR "he"',
     )
     check("fts: single chars dropped", fts_query("a b faith") == '"faith"')
     check("fts: empty query is empty", fts_query("?! -- ,") == "")

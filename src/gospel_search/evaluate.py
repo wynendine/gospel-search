@@ -84,14 +84,22 @@ def run_eval(
     }
 
     print()
+    mode = "full pipeline" if (use_hyde and use_rerank) else "retrieval only"
+    print(f"  mode      {mode}")
     print(f"  cases     {report['cases']}")
     print(f"  hit@1     {report['hit@1']:.0%}")
     print(f"  recall@{n} {report[f'recall@{n}']:.0%}")
     print(f"  MRR       {report['mrr']:.3f}")
     misses = [r for r in rows if r[2] is None]
     if misses:
-        print(f"\n  missed entirely ({len(misses)}):")
+        print(f"\n  outside the top {n} ({len(misses)}):")
         for query, expected, _ in misses:
             print(f"    {query}  ->  {expected}")
+        if not (use_hyde and use_rerank):
+            print(
+                "\n  Retrieval-only mode is a diagnostic, not the target. Paraphrase\n"
+                "  cases are expected to fail here — recovering them is what HyDE and\n"
+                "  reranking are for. Compare against the full pipeline before acting."
+            )
 
     return report
