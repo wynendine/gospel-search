@@ -1,0 +1,104 @@
+# Retrieval regression set.
+#
+# `expect` is matched as a case-insensitive substring against a result's
+# citation and its document title, so "Alma 32:21" or "Lord, I Believe" both
+# work. `source` optionally restricts a case to talks or scriptures.
+#
+# Add a case every time the tool fails to find something you knew was there —
+# that is what keeps tuning honest.
+
+# --- Lexical half: the words are right there in the verse ------------------
+- query: the natural man is an enemy to God
+  expect: [Mosiah 3:19]
+  source: scriptures
+
+- query: faith is not to have a perfect knowledge of things
+  expect: [Alma 32:21]
+  source: scriptures
+
+- query: charity is the pure love of Christ
+  expect: [Moroni 7:47]
+  source: scriptures
+
+- query: I will go and do the things which the Lord hath commanded
+  expect: [1 Nephi 3:7]
+  source: scriptures
+
+- query: for behold this is my work and my glory
+  expect: [Moses 1:39]
+  source: scriptures
+
+# --- Semantic half: describe the idea, share almost no words ---------------
+- query: a passage about God letting people choose for themselves rather than compelling them
+  expect: [2 Nephi 2:27, Helaman 14:30, Moses 3:17]
+  source: scriptures
+
+- query: where does it say the worth of every single person is great to God
+  expect: [Doctrine and Covenants 18:10]
+  source: scriptures
+
+- query: being pruned and cut back so you can bear more fruit
+  expect: [John 15:2, Jacob 5]
+  source: scriptures
+
+- query: the verse about God comforting people who are grieving and wiping away tears
+  expect: [Revelation 21:4]
+  source: scriptures
+
+- query: a scripture that says trials refine you like metal in a furnace
+  expect: [Isaiah 48:10, 1 Peter 1:7, Malachi 3:3]
+  source: scriptures
+
+- query: the passage where a prophet is told his suffering will only last a short time
+  expect: [Doctrine and Covenants 121:7]
+  source: scriptures
+
+- query: nobody can serve two masters at once
+  expect: [Matthew 6:24, 3 Nephi 13:24]
+  source: scriptures
+
+# --- Chapter-level: which chapter is about X (needs --summaries) -----------
+# These ask for a *chapter*, so the right answer is the chapter head-note, not
+# a verse buried inside it. Without `build --summaries` they fall back to
+# verses and mostly still pass — the point of these cases is that the answer
+# comes back at the right granularity.
+- query: which chapter is the sermon on the mount
+  expect: [Matthew 5, 3 Nephi 12]
+  source: scriptures
+
+- query: the chapter about the vision of the tree of life
+  expect: [1 Nephi 8, 1 Nephi 11]
+  source: scriptures
+
+- query: which chapter is about charity
+  expect: [1 Corinthians 13, Moroni 7]
+  source: scriptures
+
+- query: the chapter about putting on the whole armor of God
+  expect: [Ephesians 6, Doctrine and Covenants 27]
+  source: scriptures
+
+- query: which chapter has the ten commandments
+  expect: [Exodus 20, Deuteronomy 5]
+  source: scriptures
+
+- query: the chapter where the resurrected Christ appears to the Nephites
+  expect: [3 Nephi 11]
+  source: scriptures
+
+# --- Conference talks (requires the talks corpus) --------------------------
+- query: the father whose son had a rare illness who asked for help with his unbelief
+  expect: ["Lord, I Believe"]
+  source: talks
+
+- query: the talk comparing our lives to a rescue of handcart pioneers in the snow
+  expect: [Martin, handcart, rescue]
+  source: talks
+
+- query: a talk about how small daily decisions compound over a lifetime
+  expect: [small, simple, daily]
+  source: talks
+
+- query: what has been said about the gathering of Israel being the greatest work on earth
+  expect: [gathering]
+  source: talks

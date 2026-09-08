@@ -1,0 +1,71 @@
+:root {
+  --bg: #fbfaf8; --panel: #ffffff; --ink: #1b1a17; --muted: #6b6862;
+  --line: #e5e1da; --accent: #7a5c2e; --on-accent: #ffffff; --accent-soft: #f3ede2;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #161513; --panel: #1e1d1a; --ink: #eceae5; --muted: #97928a;
+    --line: #302e2a; --accent: #d3ac6a; --on-accent: #1b1a17; --accent-soft: #262320;
+  }
+}
+* { box-sizing: border-box; }
+html { color-scheme: light dark; }
+body {
+  margin: 0; background: var(--bg); color: var(--ink);
+  font: 15px/1.6 ui-serif, Georgia, "Times New Roman", serif;
+}
+header { padding: 28px 20px 8px; max-width: 860px; margin: 0 auto; }
+h1 { font-size: 20px; margin: 0 0 2px; letter-spacing: -0.01em; }
+.sub { color: var(--muted); font-size: 13px; margin: 0 0 18px; }
+main { max-width: 860px; margin: 0 auto; padding: 0 20px 80px; }
+form.search { display: flex; gap: 8px; margin-bottom: 10px; }
+input[type=text], input[type=password], input[type=number], select {
+  padding: 12px 14px; font: inherit; color: var(--ink);
+  background: var(--panel); border: 1px solid var(--line); border-radius: 8px;
+}
+form.search input[type=text] { flex: 1; }
+input:focus, select:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+button {
+  padding: 12px 20px; font: inherit; font-weight: 600; cursor: pointer;
+  background: var(--accent); color: var(--on-accent); border: 0; border-radius: 8px;
+}
+button:disabled { opacity: .55; cursor: default; }
+.filters {
+  display: flex; flex-wrap: wrap; gap: 8px; align-items: center;
+  font-family: ui-sans-serif, system-ui, sans-serif; font-size: 13px;
+  color: var(--muted); margin-bottom: 22px;
+}
+.filters input, .filters select { padding: 5px 8px; border-radius: 6px; }
+.filters input[type=text] { width: 130px; }
+.filters input[type=number] { width: 86px; }
+label.check { display: inline-flex; align-items: center; gap: 5px; cursor: pointer; }
+.answer {
+  background: var(--accent-soft); border: 1px solid var(--line);
+  border-radius: 10px; padding: 16px 18px; margin-bottom: 26px;
+  font-size: 15.5px; white-space: pre-wrap;
+}
+.card { border-top: 1px solid var(--line); padding: 18px 0; }
+.cite {
+  font-family: ui-sans-serif, system-ui, sans-serif; font-weight: 600;
+  font-size: 14px; color: var(--accent); text-decoration: none;
+}
+.cite:hover { text-decoration: underline; }
+.meta {
+  font-family: ui-sans-serif, system-ui, sans-serif; font-size: 12px;
+  color: var(--muted); margin: 2px 0 8px;
+}
+.passage { margin: 0; }
+.more {
+  font-family: ui-sans-serif, system-ui, sans-serif; font-size: 12px;
+  color: var(--muted); background: none; border: 0; padding: 6px 0 0;
+  cursor: pointer; text-decoration: underline; font-weight: 400;
+}
+.window {
+  margin-top: 8px; padding-left: 14px; border-left: 2px solid var(--line);
+  color: var(--muted); white-space: pre-wrap;
+}
+.status { color: var(--muted); font-size: 14px; padding: 20px 0; }
+.signin { max-width: 340px; margin: 18vh auto; padding: 0 20px; }
+.signin form { display: flex; flex-direction: column; gap: 10px; }
+.error { color: #b3261e; font-size: 13px; }
+@media (prefers-color-scheme: dark) { .error { color: #f2b8b5; } }

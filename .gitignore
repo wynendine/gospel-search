@@ -1,0 +1,19 @@
+# Secrets — never commit
+.env
+.env.*
+!.env.example
+
+# Python
+.venv/
+__pycache__/
+*.egg-info/
+*.pyc
+
+# Node
+node_modules/
+.next/
+next-env.d.ts
+
+# The corpus and the index: large, derived, and not ours to redistribute.
+# `gospel build` regenerates all of it from public sources.
+data/
