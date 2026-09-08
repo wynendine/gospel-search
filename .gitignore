@@ -13,6 +13,7 @@ __pycache__/
 node_modules/
 .next/
 next-env.d.ts
+*.tsbuildinfo
 
 # The corpus and the index: large, derived, and not ours to redistribute.
 # `gospel build` regenerates all of it from public sources.
