@@ -97,7 +97,17 @@ def cmd_search(args) -> None:
     line = findings.coverage.summary()
     if findings.exhaustive:
         line = f"complete: all {findings.total_matches} matches · " + line
+    elif findings.total_matches:
+        line = f"{findings.total_matches:,} matches (showing examples) · " + line
     print(f"{DIM}     [{plan.intent}] {line}{RESET}")
+
+    if findings.breakdown:
+        print(f"\n{BOLD}{findings.breakdown_label}{RESET}")
+        widest = max(len(g) for g, _ in findings.breakdown)
+        biggest = max(n for _, n in findings.breakdown)
+        for group, count in findings.breakdown:
+            bar = "\u2588" * max(1, round(28 * count / biggest))
+            print(f"  {group:<{widest}}  {count:>6,}  {CYAN}{bar}{RESET}")
 
     _print_results(results)
 

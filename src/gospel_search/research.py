@@ -27,6 +27,8 @@ class Findings:
     exhaustive: bool = False  # every match is present, not just the best ones
     total_matches: int | None = None  # only meaningful when exhaustive
     groups: dict[str, list[Result]] | None = None  # compare: results per entity
+    breakdown: list[tuple[str, int]] | None = None  # enumerate: where matches fall
+    breakdown_label: str = ""
     note: str = ""  # a caveat the answer must not paper over
 
 
@@ -104,14 +106,22 @@ def cited_by(conn, plan: Plan, limit: int = 40) -> Findings | None:
 
 
 def enumerate_matches(conn, plan: Plan, limit: int = ENUMERATE_CAP) -> Findings:
-    """Every chunk containing the literal term, in canonical order.
+    """Every chunk matching the literal terms, in canonical order.
 
     This is the one query shape where ranking is the wrong tool: "every
     reference to charity" wants completeness and scripture order, not the ten
     best. FTS5 can answer it exactly, so it does — and the count is real.
+
+    Two honesty problems this has to handle. Matching is stemmed, so "faith"
+    also catches "faithful" and the count is larger than a literal one; that is
+    usually wanted but must be said. And plenty of terms are far too common to
+    list — "faith" matches 16,081 chunks — so past the cap the answer becomes a
+    distribution plus examples rather than a truncated list pretending to be
+    an index.
     """
     where, params = plan.filters.sql()
-    match = " OR ".join(f'"{t}"' for t in plan.literal_terms)
+    joiner = " AND " if plan.match_mode == "all" else " OR "
+    match = joiner.join(f'"{t}"' for t in plan.literal_terms)
 
     total = conn.execute(
         f"""SELECT COUNT(*) FROM chunks_fts f
@@ -121,18 +131,62 @@ def enumerate_matches(conn, plan: Plan, limit: int = ENUMERATE_CAP) -> Findings:
         [match, *params],
     ).fetchone()[0]
 
+    stemmed = (
+        "Matching is stemmed, so a term also catches its word forms "
+        '("faith" includes "faithful").'
+    )
+
+    if total <= limit:
+        rows = conn.execute(
+            f"""SELECT c.id FROM chunks_fts f
+                JOIN chunks c ON c.id = f.rowid
+                JOIN documents d ON d.id = c.doc_id
+                WHERE chunks_fts MATCH ? AND {where}
+                ORDER BY c.doc_id, c.ordinal""",
+            [match, *params],
+        ).fetchall()
+        results = hydrate(conn, [(r["id"], 0.0, {}) for r in rows])
+        return Findings(
+            plan=plan,
+            results=results,
+            coverage=Coverage(
+                passages=len(results),
+                documents=len({r.doc_id for r in results}),
+                candidates=total,
+            ),
+            exhaustive=True,
+            total_matches=total,
+            note=stemmed,
+        )
+
+    # Too many to list. Report where they fall, and show the best examples
+    # rather than the first N in canonical order, which would all come from
+    # Genesis and tell you nothing.
+    scripture = plan.filters.source == "scriptures"
+    group_by, label = (
+        ("d.book", "matches by book") if scripture else ("SUBSTR(d.date,1,3)", "matches by decade")
+    )
+    breakdown = [
+        (f"{r[0]}0s" if not scripture and r[0] else str(r[0]), r[1])
+        for r in conn.execute(
+            f"""SELECT {group_by} AS grp, COUNT(*) AS n FROM chunks_fts f
+                JOIN chunks c ON c.id = f.rowid
+                JOIN documents d ON d.id = c.doc_id
+                WHERE chunks_fts MATCH ? AND {where}
+                GROUP BY grp ORDER BY n DESC LIMIT 25""",
+            [match, *params],
+        )
+    ]
+
     rows = conn.execute(
-        f"""SELECT c.id FROM chunks_fts f
+        f"""SELECT f.rowid AS id FROM chunks_fts f
             JOIN chunks c ON c.id = f.rowid
             JOIN documents d ON d.id = c.doc_id
             WHERE chunks_fts MATCH ? AND {where}
-            ORDER BY c.doc_id, c.ordinal
-            LIMIT ?""",
-        [match, *params, limit],
+            ORDER BY bm25(chunks_fts, 4.0, 2.0, 1.0) LIMIT 20""",
+        [match, *params],
     ).fetchall()
-
     results = hydrate(conn, [(r["id"], 0.0, {}) for r in rows])
-    complete = total <= limit
 
     return Findings(
         plan=plan,
@@ -142,12 +196,15 @@ def enumerate_matches(conn, plan: Plan, limit: int = ENUMERATE_CAP) -> Findings:
             documents=len({r.doc_id for r in results}),
             candidates=total,
         ),
-        exhaustive=complete,
+        exhaustive=False,
         total_matches=total,
+        breakdown=breakdown,
+        breakdown_label=label,
         note=(
-            ""
-            if complete
-            else f"Showing the first {limit} of {total} matches in canonical order."
+            f"{total:,} passages match — far too many to list, so this is where "
+            f"they fall plus the {len(results)} strongest examples, NOT a "
+            f"complete index. {stemmed} Narrow the scope (a book, a volume, a "
+            "speaker, a date range) to get a complete list."
         ),
     )
 

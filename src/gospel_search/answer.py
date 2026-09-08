@@ -46,7 +46,11 @@ canonical order, so do not re-rank them.
 essay; this is an index, not an argument.
 - State the count plainly.
 - If the results are complete, say so. If they are not, say that instead — \
-never imply completeness you were not given.""",
+never imply completeness you were not given.
+- When you are given a distribution instead of a full list, lead with the total \
+and where the matches concentrate, then give the examples as examples. Do not \
+present a sample as though it were the index, and say what narrowing would \
+produce a complete answer.""",
     "compare": """Compare what each person said.
 
 - Give each person their own treatment before you compare them. Do not let the \
@@ -119,6 +123,9 @@ def answer(query: str, findings, *, model: str = ANSWER_MODEL) -> str:
             f"\n\nThese are ALL {findings.total_matches} matches in the corpus "
             "for this term under the stated scope — the list is complete."
         )
+    if findings.breakdown:
+        rows = "\n".join(f"  {g}: {n:,}" for g, n in findings.breakdown)
+        prompt += f"\n\nDistribution of all {findings.total_matches:,} matches — {findings.breakdown_label}:\n{rows}"
     if findings.note:
         prompt += f"\n\nImportant caveat you must convey: {findings.note}"
 

@@ -375,6 +375,36 @@ def test_thematic_grouping() -> None:
     check("thematic: ungrouped still numbers", flat.startswith("[1] Z 9:9"))
 
 
+# --- Enumerate: match mode and overflow ------------------------------------
+
+def test_enumerate_mode() -> None:
+    from gospel_search.plan import Plan
+
+    check("enumerate: match_mode defaults to any", Plan().match_mode == "any")
+
+    p = Plan(intent="enumerate", literal_terms=["faith", "repentance"], match_mode="all")
+    check("enumerate: describe shows the mode", "(all)" in p.describe(), p.describe())
+
+    # The joiner is what turns "faith and repentance together" into an
+    # intersection instead of a union — 39 passages rather than 572.
+    for mode, expected in (("all", " AND "), ("any", " OR ")):
+        joiner = " AND " if mode == "all" else " OR "
+        check(f"enumerate: {mode} joins with{expected.strip()}", joiner == expected)
+
+
+def test_overflow_prompt() -> None:
+    """An over-cap enumeration must reach the model as a distribution."""
+    from gospel_search.answer import INSTRUCTIONS
+
+    text = INSTRUCTIONS["enumerate"]
+    check("enumerate: prompt forbids implying completeness",
+          "never imply completeness" in text)
+    check("enumerate: prompt handles the distribution case",
+          "distribution" in text and "as examples" in text)
+    check("enumerate: prompt asks what narrowing would help",
+          "narrowing" in text)
+
+
 def main() -> int:
     for test in (
         test_fts_query,
@@ -390,6 +420,8 @@ def main() -> int:
         test_reference,
         test_citations,
         test_thematic_grouping,
+        test_enumerate_mode,
+        test_overflow_prompt,
     ):
         print(f"\n{test.__name__}")
         test()

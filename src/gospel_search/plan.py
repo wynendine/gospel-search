@@ -60,6 +60,10 @@ Rules:
   of Israel" that means temple and family history work, missionary work, the
   scattering itself, covenant and adoption, and who is asked to participate.
   One broad query finds one facet and misses the rest.
+- `match_mode` matters only for enumerate. "all" when the question asks for
+  passages containing every term together ("faith and repentance together"),
+  "any" when the terms are alternatives or spellings of one idea ("references
+  to charity"). Default to "any".
 - `entities` matters only for compare: the speakers or sources to contrast,
   as surnames for people ("Bednar", "Holland").
 - Volumes must be exactly one of: {volumes}. Books are single books like
@@ -77,6 +81,7 @@ SCHEMA = {
         "intent": {"type": "string", "enum": ["lookup", "enumerate", "compare", "thematic", "citations"]},
         "topic": {"type": "string"},
         "literal_terms": {"type": "array", "items": {"type": "string"}},
+        "match_mode": {"type": "string", "enum": ["any", "all"]},
         "entities": {"type": "array", "items": {"type": "string"}},
         "facets": {"type": "array", "items": {"type": "string"}},
         # A nullable field cannot also carry an enum here, so the allowed
@@ -89,7 +94,7 @@ SCHEMA = {
         "before": {"type": ["integer", "null"]},
     },
     "required": [
-        "intent", "topic", "literal_terms", "entities", "facets",
+        "intent", "topic", "literal_terms", "match_mode", "entities", "facets",
         "source", "volume", "book", "speaker", "after", "before",
     ],
     "additionalProperties": False,
@@ -101,6 +106,7 @@ class Plan:
     intent: str = "lookup"
     topic: str = ""
     literal_terms: list[str] = field(default_factory=list)
+    match_mode: str = "any"
     entities: list[str] = field(default_factory=list)
     facets: list[str] = field(default_factory=list)
     filters: Filters = field(default_factory=Filters)
@@ -108,7 +114,7 @@ class Plan:
     def describe(self) -> str:
         bits = [f"intent={self.intent}", f'topic="{self.topic}"']
         if self.literal_terms:
-            bits.append(f"terms={self.literal_terms}")
+            bits.append(f"terms={self.literal_terms} ({self.match_mode})")
         if self.entities:
             bits.append(f"entities={self.entities}")
         if self.facets:
@@ -181,6 +187,7 @@ def plan(query: str, *, override: Filters | None = None) -> Plan:
         intent=data.get("intent", "lookup"),
         topic=data.get("topic") or query,
         literal_terms=[t for t in data.get("literal_terms", []) if t],
+        match_mode="all" if data.get("match_mode") == "all" else "any",
         entities=[e for e in data.get("entities", []) if e],
         facets=[f for f in data.get("facets", []) if f],
         filters=filters,

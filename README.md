@@ -119,10 +119,23 @@ retrieval (lookup / compare / thematic)
 `--explain` prints the plan. `--no-plan` skips it and treats the query as a
 plain lookup.
 
-**Enumeration is exact.** "Every reference to charity in the Book of Mormon"
-returns all 22 matches in canonical order and says so; it is a FTS term match
-with a real count, not a ranking. For a *concept* rather than a fixed word the
-answer says explicitly that it is not a complete list, because it can't be.
+**Enumeration is exact, or honest about not being.** "Every reference to charity
+in the Book of Mormon" returns all 22 matches in canonical order and says so —
+a term match with a real count, not a ranking. Three things it gets right that
+are easy to get wrong:
+
+- *Too many to list.* "All references to faith in conference" matches 15,188.
+  Past the cap the answer becomes a **distribution** — matches by decade, or by
+  book for scripture — plus the strongest examples, and says plainly that it is
+  not an index and what narrowing would produce one.
+- *Terms together vs. either.* "Faith and repentance together in the Book of
+  Mormon" intersects rather than unions: 39 passages, not 572.
+- *Stemming.* Matching is stemmed, so "faith" also catches "faithful" (16,081
+  chunks against 13,455 literal). That is usually wanted, and the answer says so
+  rather than claiming a completeness it doesn't have.
+
+For a *concept* rather than a fixed word, the answer states explicitly that the
+results are the best matches and not a complete list, because they can't be.
 
 **Comparison retrieves per person.** A single blended query for "compare Bednar
 and Holland on faith" returns passages about faith, most by neither man — only
