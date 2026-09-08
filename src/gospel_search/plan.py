@@ -40,6 +40,8 @@ Intents:
               "compare Bednar and Holland on faith"
   thematic  — survey teaching on a subject broadly across many sources.
               "what has been taught about the gathering of Israel"
+  citations — which talks quote or cite a specific scripture.
+              "which talks cite Alma 32:21", "who has quoted Moses 1:39"
 
 Rules:
 - `topic` is what to search for, stripped of scoping and of the instruction
@@ -50,6 +52,8 @@ Rules:
   charity"). Leave it empty when they mean a *concept* with no fixed wording
   ("every passage about enduring trials") — that cannot be enumerated exactly,
   and the caller needs to know the difference.
+- For citations, put the scripture reference in `topic` exactly as given
+  ("Alma 32:21"), and nothing else.
 - `entities` matters only for compare: the speakers or sources to contrast,
   as surnames for people ("Bednar", "Holland").
 - Volumes must be exactly one of: {volumes}. Books are single books like
@@ -64,7 +68,7 @@ Question: {query}"""
 SCHEMA = {
     "type": "object",
     "properties": {
-        "intent": {"type": "string", "enum": ["lookup", "enumerate", "compare", "thematic"]},
+        "intent": {"type": "string", "enum": ["lookup", "enumerate", "compare", "thematic", "citations"]},
         "topic": {"type": "string"},
         "literal_terms": {"type": "array", "items": {"type": "string"}},
         "entities": {"type": "array", "items": {"type": "string"}},

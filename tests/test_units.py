@@ -305,6 +305,35 @@ def test_reference() -> None:
     check("ref: normalize folds case", _normalize("Alma") == _normalize("ALMA"))
 
 
+# --- Citation extraction ---------------------------------------------------
+
+def test_citations() -> None:
+    from gospel_search import citations as cite
+
+    # Verse ids out of the href query string.
+    check("cite: single verse", cite._verses("?lang=eng&id=p4#p4") == (4,))
+    check("cite: verse range", cite._verses("?lang=eng&id=p8-p9#p8") == (8, 9))
+    check("cite: url-encoded comma list", cite._verses("?id=p12%2Cp14#p12") == (12, 14))
+    check("cite: chapter-level has no verses", cite._verses("?lang=eng") == ())
+    check("cite: absurd range collapses", cite._verses("?id=p1-p9999") == (1,))
+
+    # Inline prose extraction is gated on the book resolving.
+    # Keys are _normalize()d, which preserves "&" — the real table carries
+    # both "d&c" and "dc" for exactly this reason.
+    aliases = {"d&c": "Doctrine and Covenants", "dc": "Doctrine and Covenants",
+               "alma": "Alma"}
+    found = cite.from_prose("as it says in Alma 32:21, and also D&C 64:9", aliases)
+    books = sorted((c.book, c.chapter, c.verses) for c in found)
+    check("cite: finds inline references", len(found) == 2, f"got {found}")
+    check("cite: resolves abbreviations", ("Doctrine and Covenants", 64, (9,)) in books)
+
+    noise = cite.from_prose("the meeting ran 10:30 to 11:45 on April 6", aliases)
+    check("cite: unknown book is not a citation", noise == [], f"got {noise}")
+
+    ranged = cite.from_prose("see Alma 32:21-23", aliases)
+    check("cite: inline range expands", ranged and ranged[0].verses == (21, 22, 23))
+
+
 def main() -> int:
     for test in (
         test_fts_query,
@@ -318,6 +347,7 @@ def main() -> int:
         test_diversify,
         test_plan,
         test_reference,
+        test_citations,
     ):
         print(f"\n{test.__name__}")
         test()

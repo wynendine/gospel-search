@@ -40,6 +40,12 @@ def cmd_build(args) -> None:
             ]
         build_mod.build_talks(conn, periods=periods)
 
+    if args.citations:
+        from . import build_citations
+
+        print("Building the citation graph from cached pages...")
+        build_citations.build(conn)
+
     build_mod.finalize(conn, skip_embed=args.no_embed)
 
 
@@ -122,6 +128,53 @@ def _print_results(results) -> None:
     print()
 
 
+def cmd_cites(args) -> None:
+    from . import citations as cite
+    from . import reference as ref
+
+    conn = idx.connect(readonly=True)
+    filters = search_mod.Filters(
+        speaker=args.speaker, after=args.after, before=args.before
+    )
+
+    if args.most_cited:
+        rows = cite.most_cited(conn, filters, limit=args.n)
+        if not rows:
+            print("No citations indexed — run `gospel build --citations`.")
+            return
+        print(f"{BOLD}Most-cited verses{RESET}")
+        for r in rows:
+            print(f"\n{CYAN}{r['talks']:>4} talks · {r['citation']}{RESET}")
+            print(wrap(r["display_text"][:220]))
+        return
+
+    parsed = ref.parse(args.reference or "", conn)
+    if parsed is None:
+        print(f'Not a scripture reference: "{args.reference}"')
+        return
+
+    rows = cite.citing_talks(conn, parsed, filters, limit=args.n)
+    print(f"{BOLD}{len(rows)} talks cite {parsed.citation()}{RESET}")
+
+    passages = {
+        r["id"]: r["display_text"]
+        for r in conn.execute(
+            "SELECT id, display_text FROM chunks WHERE id IN ("
+            + ",".join("?" * len(rows)) + ")",
+            [r["src_chunk_id"] for r in rows],
+        )
+    } if rows else {}
+
+    for r in rows:
+        print(f"\n{CYAN}{r['date'][:4]}  {r['title']}{RESET}")
+        print(f"{DIM}     {r['speaker']} · cited as {r['citation']}{RESET}")
+        text = passages.get(r["src_chunk_id"])
+        if text:
+            print(wrap(text[:280] + ("…" if len(text) > 280 else "")))
+        print(f"{DIM}     {r['url']}{RESET}")
+    print()
+
+
 def cmd_stats(args) -> None:
     meta = idx.read_meta()
     if not meta:
@@ -184,6 +237,10 @@ def main(argv=None) -> None:
     )
     build.add_argument("--no-embed", action="store_true", help="ingest only")
     build.add_argument("--no-verify", action="store_true", help="skip the URL check")
+    build.add_argument(
+        "--citations", action="store_true",
+        help="rebuild the talk->scripture citation graph from cached pages",
+    )
     build.set_defaults(func=cmd_build)
 
     search = sub.add_parser("search", help="search the corpus")
@@ -210,6 +267,18 @@ def main(argv=None) -> None:
     search.add_argument("--no-hyde", action="store_true")
     search.add_argument("--no-rerank", action="store_true")
     search.set_defaults(func=cmd_search)
+
+    cites = sub.add_parser("cites", help="which talks cite a scripture")
+    cites.add_argument("reference", nargs="?", help='e.g. "Alma 32:21", "D&C 121"')
+    cites.add_argument("-n", type=int, default=25)
+    cites.add_argument("--speaker")
+    cites.add_argument("--after", type=int, metavar="YEAR")
+    cites.add_argument("--before", type=int, metavar="YEAR")
+    cites.add_argument(
+        "--most-cited", action="store_true", dest="most_cited",
+        help="rank the most-cited verses instead",
+    )
+    cites.set_defaults(func=cmd_cites)
 
     stats = sub.add_parser("stats", help="what's in the index")
     stats.set_defaults(func=cmd_stats)

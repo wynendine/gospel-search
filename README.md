@@ -144,6 +144,30 @@ found a given passage.
 **Reranking** is the biggest quality lever after chunking. The fused top-10 and
 the reranked top-10 are routinely different lists.
 
+## The citation graph
+
+Talks footnote the verses they quote, and those footnotes are structured links.
+Parsing them turns the corpus into a graph — **77,859 talk→scripture links from
+3,822 of 4,254 talks**, each recording the paragraph that does the citing.
+
+```bash
+gospel build --citations              # from cached pages; no refetch, no re-embed
+gospel cites "Alma 32:21"             # which talks quote it, and the sentence
+gospel cites "D&C 121" --after 2015
+gospel cites --most-cited -n 20       # most-quoted verses in conference
+gospel search "which talks cite Moses 1:39"   # same thing in prose
+```
+
+Footnotes only exist from about 1990, so talks before that are covered by a
+second pass over the prose, where references were written inline — "(D&C 64:9)".
+That pass only accepts a match whose book name resolves through the reference
+parser's alias table, which is what keeps "the meeting ran 10:30 to 11:45" out
+of the graph. 42,845 links come from footnotes, 35,014 from prose.
+
+The graph answers questions search cannot, because it knows what a talk
+*quotes* rather than what it is *about*. Most-cited across the corpus:
+Moses 1:39 (233 talks), Mosiah 18:9 (158), 2 Nephi 31:20 (150).
+
 ## Storage
 
 Vectors live in a plain memory-mapped `.npy`, not a vector database —

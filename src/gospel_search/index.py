@@ -54,6 +54,24 @@ CREATE INDEX IF NOT EXISTS chunks_embedded ON chunks(embedded);
 CREATE INDEX IF NOT EXISTS chunks_kind     ON chunks(kind);
 CREATE INDEX IF NOT EXISTS chunks_date     ON chunks(date);
 
+-- Which talk cites which verse. tgt_chunk_id is the verse chunk when it
+-- resolves, NULL for a chapter-level reference or a verse outside the corpus.
+CREATE TABLE IF NOT EXISTS citations (
+    id           INTEGER PRIMARY KEY,
+    src_doc_id   INTEGER NOT NULL REFERENCES documents(id),
+    src_chunk_id INTEGER REFERENCES chunks(id),   -- the paragraph doing the citing
+    tgt_doc_id   INTEGER REFERENCES documents(id),
+    tgt_chunk_id INTEGER REFERENCES chunks(id),
+    citation     TEXT NOT NULL,
+    origin       TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS citations_src   ON citations(src_doc_id);
+CREATE INDEX IF NOT EXISTS citations_tgt   ON citations(tgt_chunk_id);
+CREATE INDEX IF NOT EXISTS citations_tgtdoc ON citations(tgt_doc_id);
+CREATE UNIQUE INDEX IF NOT EXISTS citations_unique
+    ON citations(src_doc_id, src_chunk_id, tgt_doc_id, tgt_chunk_id, citation);
+
 -- rowid is kept equal to chunks.id, so a bm25 hit maps straight to a chunk
 -- with no join.
 CREATE VIRTUAL TABLE IF NOT EXISTS chunks_fts USING fts5(

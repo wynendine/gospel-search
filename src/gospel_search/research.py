@@ -57,6 +57,50 @@ def resolve_reference(conn, query: str) -> Findings | None:
     )
 
 
+def cited_by(conn, plan: Plan, limit: int = 40) -> Findings | None:
+    """Talks that cite a scripture — a graph lookup, not a search.
+
+    Reads the citation graph built from talk footnotes and inline references,
+    so the answer is the actual set of talks that quote the verse rather than
+    talks that happen to discuss the same subject.
+    """
+    from . import citations as cite
+
+    parsed = ref.parse(plan.topic, conn)
+    if parsed is None:
+        return None
+
+    rows = cite.citing_talks(conn, parsed, plan.filters, limit=limit)
+    ids = [r["id"] for r in rows]
+    if not ids:
+        return Findings(
+            plan=plan, results=[], coverage=Coverage(),
+            note=f"No talk in the corpus cites {parsed.citation()}.",
+        )
+
+    # Show the paragraph that does the citing, not the talk's opening — the
+    # answer to "which talks cite Alma 32:21" is the sentences that quote it.
+    chunk_ids, seen = [], set()
+    for row in rows:
+        cid = row["src_chunk_id"]
+        if cid and cid not in seen:
+            seen.add(cid)
+            chunk_ids.append(cid)
+    results = hydrate(conn, [(i, 0.0, {}) for i in chunk_ids])
+    order = {cid: i for i, cid in enumerate(chunk_ids)}
+    results.sort(key=lambda r: order.get(r.chunk_id, 999))
+
+    return Findings(
+        plan=plan,
+        results=results,
+        coverage=Coverage(
+            passages=len(results), documents=len(results), candidates=len(rows)
+        ),
+        exhaustive=len(rows) < limit,
+        total_matches=len(rows),
+    )
+
+
 def enumerate_matches(conn, plan: Plan, limit: int = ENUMERATE_CAP) -> Findings:
     """Every chunk containing the literal term, in canonical order.
 
@@ -166,6 +210,11 @@ def investigate(
 
     if plan.intent == "reference":
         found = resolve_reference(conn, plan.topic)
+        if found is not None:
+            return found
+
+    if plan.intent == "citations":
+        found = cited_by(conn, plan)
         if found is not None:
             return found
 
