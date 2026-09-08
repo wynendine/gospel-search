@@ -20,6 +20,7 @@ from .config import (
     DENSE_K,
     HYDE_MODEL,
     LEXICAL_K,
+    MAX_PER_DOC,
     RERANK_K,
     RERANK_MODEL,
     RRF_K,
@@ -44,8 +45,11 @@ class Filters:
     after: int | None = None
     before: int | None = None
     source: str | None = None  # "talks" | "scriptures"
+    volume: str | None = None  # "Book of Mormon", "Old Testament", ...
+    book: str | None = None  # "Alma", "Moroni", ...
 
     def sql(self) -> tuple[str, list]:
+        """WHERE fragment for the lexical half. Assumes `documents d` is joined."""
         clauses, params = [], []
         if self.speaker:
             clauses.append("c.speaker LIKE ?")
@@ -60,16 +64,47 @@ class Filters:
             clauses.append("c.kind = 'talk'")
         elif self.source == "scriptures":
             clauses.append("c.kind IN ('verse', 'summary')")
+        if self.volume:
+            clauses.append("d.volume LIKE ?")
+            params.append(f"%{self.volume}%")
+        if self.book:
+            clauses.append("d.book LIKE ?")
+            params.append(f"%{self.book}%")
         return (" AND ".join(clauses) if clauses else "1=1"), params
 
     @property
     def active(self) -> bool:
-        return any([self.speaker, self.after, self.before, self.source])
+        return any(
+            [self.speaker, self.after, self.before, self.source, self.volume, self.book]
+        )
+
+
+@dataclass
+class Coverage:
+    """What the answer actually got to look at.
+
+    The failure mode of this tool is sounding authoritative while having read a
+    thin slice — a comparison of two apostles drawn from one talk each reads
+    exactly like a survey of forty. Reporting the slice is part of the answer.
+    """
+
+    passages: int = 0
+    documents: int = 0
+    candidates: int = 0  # size of the fused pool before truncation
+    matching_documents: int | None = None  # documents the filter admits, if filtered
+
+    def summary(self) -> str:
+        parts = [f"{self.passages} passages from {self.documents} sources"]
+        if self.matching_documents:
+            parts.append(f"{self.matching_documents} matched the filter")
+        parts.append(f"{self.candidates} candidates considered")
+        return " · ".join(parts)
 
 
 @dataclass
 class Result:
     chunk_id: int
+    doc_id: int
     citation: str
     url: str
     speaker: str
@@ -117,13 +152,13 @@ def hyde(query: str) -> str:
 # --- Retrieval halves ------------------------------------------------------
 
 
-_columns: tuple[np.ndarray, np.ndarray, np.ndarray, list[str]] | None = None
+_columns: "Columns | None" = None
 
 KIND_CODES = {"talk": 0, "verse": 1, "summary": 2}
 
 
-def filter_columns(conn):
-    """Kind, year, and speaker code per vector row, built once.
+def filter_columns(conn) -> "Columns":
+    """Kind, year, document, and dictionary-encoded strings per vector row.
 
     Filtering used to pull every matching vec_row out of SQLite through a
     Python generator — for `--source talks` that is 146k integers crossing the
@@ -140,50 +175,86 @@ def filter_columns(conn):
         rows = max(conn.execute("SELECT MAX(vec_row) FROM chunks").fetchone()[0] or -1, -1) + 1
         kind = np.full(rows, -1, dtype=np.int8)
         year = np.zeros(rows, dtype=np.int16)
-        speaker = np.full(rows, -1, dtype=np.int16)
-        names: list[str] = []
-        codes: dict[str, int] = {}
+        doc = np.full(rows, -1, dtype=np.int32)
 
-        for vec_row, k, date, who in conn.execute(
-            "SELECT vec_row, kind, date, speaker FROM chunks WHERE vec_row IS NOT NULL"
+        # Dictionary-encoded string columns: (array of codes, list of names).
+        encoded = {"speaker": {}, "volume": {}, "book": {}}
+        arrays = {
+            name: np.full(rows, -1, dtype=np.int16) for name in encoded
+        }
+        names = {name: [] for name in encoded}
+
+        for vec_row, k, date, doc_id, speaker, volume, book in conn.execute(
+            """SELECT c.vec_row, c.kind, c.date, c.doc_id, c.speaker, d.volume, d.book
+                 FROM chunks c JOIN documents d ON d.id = c.doc_id
+                WHERE c.vec_row IS NOT NULL"""
         ):
             kind[vec_row] = KIND_CODES.get(k, -1)
             year[vec_row] = int(date[:4]) if date[:4].isdigit() else 0
-            if who:
-                code = codes.get(who)
+            doc[vec_row] = doc_id
+            for column, value in (
+                ("speaker", speaker), ("volume", volume), ("book", book)
+            ):
+                if not value:
+                    continue
+                code = encoded[column].get(value)
                 if code is None:
-                    code = codes[who] = len(names)
-                    names.append(who)
-                speaker[vec_row] = code
+                    code = encoded[column][value] = len(names[column])
+                    names[column].append(value)
+                arrays[column][vec_row] = code
 
-        _columns = (kind, year, speaker, names)
+        _columns = Columns(kind, year, doc, arrays, names)
     return _columns
+
+
+@dataclass
+class Columns:
+    kind: np.ndarray
+    year: np.ndarray
+    doc: np.ndarray
+    codes: dict[str, np.ndarray]
+    names: dict[str, list[str]]
+
+    def matching(self, field: str, needle: str) -> np.ndarray | None:
+        """Mask for a case-insensitive substring match on a dictionary column."""
+        low = needle.lower()
+        wanted = [i for i, n in enumerate(self.names[field]) if low in n.lower()]
+        if not wanted:
+            return None
+        return np.isin(self.codes[field], np.array(wanted, dtype=np.int16))
 
 
 def dense(conn, vectors, query_vector, filters: Filters, k: int = DENSE_K):
     scores = vectors @ query_vector
 
     if filters.active:
-        kind, year, speaker, names = filter_columns(conn)
+        cols = filter_columns(conn)
         mask = np.ones(scores.shape[0], dtype=bool)
 
         if filters.source == "talks":
-            mask &= kind == KIND_CODES["talk"]
+            mask &= cols.kind == KIND_CODES["talk"]
         elif filters.source == "scriptures":
-            mask &= (kind == KIND_CODES["verse"]) | (kind == KIND_CODES["summary"])
+            mask &= (cols.kind == KIND_CODES["verse"]) | (
+                cols.kind == KIND_CODES["summary"]
+            )
         # Scripture rows carry year 0, so a date bound excludes them — which is
         # the right reading of "conference talks after 2010".
         if filters.after:
-            mask &= year >= filters.after
+            mask &= cols.year >= filters.after
         if filters.before:
-            mask &= (year <= filters.before) & (year > 0)
+            mask &= (cols.year <= filters.before) & (cols.year > 0)
 
-        if filters.speaker:
-            needle = filters.speaker.lower()
-            wanted = [i for i, name in enumerate(names) if needle in name.lower()]
-            if not wanted:
+        for field, needle in (
+            ("speaker", filters.speaker),
+            ("volume", filters.volume),
+            ("book", filters.book),
+        ):
+            if not needle:
+                continue
+            found = cols.matching(field, needle)
+            if found is None:
                 return []
-            mask &= np.isin(speaker, np.array(wanted, dtype=np.int16))
+            mask &= found
 
         if not mask.any():
             return []
@@ -217,6 +288,7 @@ def lexical(conn, query: str, filters: Filters, k: int = LEXICAL_K):
         f"""SELECT f.rowid AS id, bm25(chunks_fts, 4.0, 2.0, 1.0) AS score
             FROM chunks_fts f
             JOIN chunks c ON c.id = f.rowid
+            JOIN documents d ON d.id = c.doc_id
             WHERE chunks_fts MATCH ? AND {where}
             ORDER BY score LIMIT ?""",
         [match, *params, k],
@@ -249,7 +321,7 @@ def hydrate(conn, fused) -> list[Result]:
     rows = {
         row["id"]: row
         for row in conn.execute(
-            f"""SELECT c.id, c.citation, c.url, c.speaker, c.date, c.kind,
+            f"""SELECT c.id, c.doc_id, c.citation, c.url, c.speaker, c.date, c.kind,
                        c.display_text, c.window_text, d.title
                 FROM chunks c JOIN documents d ON d.id = c.doc_id
                 WHERE c.id IN ({placeholders})""",
@@ -265,6 +337,7 @@ def hydrate(conn, fused) -> list[Result]:
         results.append(
             Result(
                 chunk_id=chunk_id,
+                doc_id=row["doc_id"],
                 citation=row["citation"],
                 url=row["url"],
                 speaker=row["speaker"],
@@ -357,19 +430,68 @@ def rerank(query: str, results: list[Result], k: int = RERANK_K) -> list[Result]
     return candidates + rest
 
 
+def diversify(results: list[Result], max_per_doc: int, n: int) -> list[Result]:
+    """Take the top n, but let no single document dominate.
+
+    Without this a comparison of two speakers drew six of its eight passages
+    from two talks — the ranking is per-chunk, and a talk that is strongly on
+    topic wins every slot. Rank order is preserved; over-represented documents
+    are skipped and backfilled from further down.
+    """
+    if max_per_doc <= 0:
+        return results[:n]
+
+    kept: list[Result] = []
+    overflow: list[Result] = []
+    seen: dict[int, int] = {}
+
+    for r in results:
+        if seen.get(r.doc_id, 0) < max_per_doc:
+            seen[r.doc_id] = seen.get(r.doc_id, 0) + 1
+            kept.append(r)
+        else:
+            overflow.append(r)
+        if len(kept) == n:
+            return kept
+
+    # Not enough distinct documents to fill n — fall back to the best of what
+    # was skipped rather than returning a short list.
+    return (kept + overflow)[:n]
+
+
+def coverage(
+    conn, results: list[Result], candidates: int, filters: Filters
+) -> Coverage:
+    matching = None
+    if filters.active:
+        where, params = filters.sql()
+        matching = conn.execute(
+            f"""SELECT COUNT(DISTINCT c.doc_id) FROM chunks c
+                JOIN documents d ON d.id = c.doc_id WHERE {where}""",
+            params,
+        ).fetchone()[0]
+    return Coverage(
+        passages=len(results),
+        documents=len({r.doc_id for r in results}),
+        candidates=candidates,
+        matching_documents=matching,
+    )
+
+
 # --- Entry point -----------------------------------------------------------
 
 
-def search(
+def search_with_coverage(
     query: str,
     *,
     n: int = 10,
     filters: Filters | None = None,
     use_hyde: bool = True,
     use_rerank: bool = True,
+    max_per_doc: int = MAX_PER_DOC,
     conn=None,
     vectors=None,
-) -> list[Result]:
+) -> tuple[list[Result], Coverage]:
     filters = filters or Filters()
     conn = conn or idx.connect(readonly=True)
     vectors = idx.load_vectors() if vectors is None else vectors
@@ -389,12 +511,21 @@ def search(
 
     dense_hits = dense(conn, vectors, query_vector, filters)
     lexical_hits = lexical(conn, query, filters)
-    results = hydrate(conn, fuse(dense_hits, lexical_hits))
+    fused = fuse(dense_hits, lexical_hits)
+    results = hydrate(conn, fused)
 
     if use_rerank and results:
         results = rerank(query, results)
 
-    return results[:n]
+    # Diversify after reranking, so relevance decides the order and the cap only
+    # decides who gets crowded out.
+    results = diversify(results, max_per_doc, n)
+    return results, coverage(conn, results, len(fused), filters)
+
+
+def search(query: str, **kwargs) -> list[Result]:
+    """Results only, for callers that don't need the coverage report."""
+    return search_with_coverage(query, **kwargs)[0]
 
 
 def context_for_answer(results: list[Result], k: int = ANSWER_K) -> list[Result]:

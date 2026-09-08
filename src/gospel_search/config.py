@@ -39,6 +39,12 @@ RRF_K = 60  # reciprocal-rank-fusion damping constant
 RERANK_K = 50  # fused candidates handed to the reranker
 ANSWER_K = 12  # reranked passages handed to the synthesizer
 
+# Cap on passages from any one talk or chapter. Ranking is per-chunk, so a
+# single strongly on-topic talk otherwise wins most of the slots — a two-speaker
+# comparison drew six of eight passages from two talks before this existed.
+# Raise it when you want depth in one source, lower it for breadth.
+MAX_PER_DOC = 3
+
 WINDOW = 1  # units of context on each side of the anchor (1 => 3-unit window)
 
 # --- Sources ---------------------------------------------------------------

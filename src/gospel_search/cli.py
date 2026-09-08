@@ -9,6 +9,7 @@ from . import answer as answer_mod
 from . import build as build_mod
 from . import index as idx
 from . import search as search_mod
+from .config import MAX_PER_DOC
 
 BOLD, DIM, CYAN, YELLOW, RESET = "\033[1m", "\033[2m", "\033[36m", "\033[33m", "\033[0m"
 
@@ -46,13 +47,16 @@ def cmd_search(args) -> None:
         after=args.after,
         before=args.before,
         source=args.source,
+        volume=args.volume,
+        book=args.book,
     )
-    results = search_mod.search(
+    results, cover = search_mod.search_with_coverage(
         args.query,
         n=args.n,
         filters=filters,
         use_hyde=not args.no_hyde,
         use_rerank=not args.no_rerank,
+        max_per_doc=args.max_per_doc,
     )
 
     if not results:
@@ -65,6 +69,10 @@ def cmd_search(args) -> None:
         )
         print(f"\n{BOLD}{text}{RESET}\n")
         print(DIM + "─" * 88 + RESET)
+
+    # What the answer actually saw. Without this the output reads like a survey
+    # of the whole corpus regardless of how thin the evidence was.
+    print(f"{DIM}     {cover.summary()}{RESET}")
 
     for i, result in enumerate(results, start=1):
         meta = []
@@ -162,6 +170,12 @@ def main(argv=None) -> None:
     search.add_argument("--after", type=int, metavar="YEAR")
     search.add_argument("--before", type=int, metavar="YEAR")
     search.add_argument("--source", choices=["talks", "scriptures"])
+    search.add_argument("--volume", help='e.g. "Book of Mormon", "New Testament"')
+    search.add_argument("--book", help='e.g. "Alma", "Moroni", "Isaiah"')
+    search.add_argument(
+        "--max-per-doc", type=int, default=None, dest="max_per_doc",
+        help="cap passages from one talk/chapter (default 3; 0 disables)",
+    )
     search.add_argument("--no-answer", action="store_true")
     search.add_argument("--no-hyde", action="store_true")
     search.add_argument("--no-rerank", action="store_true")
@@ -186,6 +200,8 @@ def main(argv=None) -> None:
     serve.set_defaults(func=cmd_serve)
 
     args = parser.parse_args(argv)
+    if getattr(args, "max_per_doc", None) is None:
+        args.max_per_doc = MAX_PER_DOC
     args.func(args)
 
 
