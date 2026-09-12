@@ -8,7 +8,9 @@ from pydantic import BaseModel
 
 from . import answer as answer_mod
 from . import index as idx
+from . import research as research_mod
 from . import search as search_mod
+from .plan import Plan, plan as make_plan
 
 app = FastAPI(title="Gospel Search")
 
@@ -32,34 +34,53 @@ class Query(BaseModel):
     answer: bool = True
     hyde: bool = True
     rerank: bool = True
+    plan: bool = True
 
 
 @app.post("/api/search")
 def api_search(request: Query):
     conn, vectors = _resources()
-    results = search_mod.search(
-        request.query,
-        n=request.n,
-        filters=search_mod.Filters(
-            speaker=request.speaker,
-            after=request.after,
-            before=request.before,
-            source=request.source,
-        ),
-        use_hyde=request.hyde,
-        use_rerank=request.rerank,
-        conn=conn,
-        vectors=vectors,
+    filters = search_mod.Filters(
+        speaker=request.speaker,
+        after=request.after,
+        before=request.before,
+        source=request.source,
     )
 
+    # Same shape as the CLI: a bare reference resolves directly, otherwise the
+    # planner picks the retrieval strategy. The UI used to call search()
+    # straight through, which meant none of the intents reached the browser.
+    findings = research_mod.resolve_reference(conn, request.query)
+    if findings is None:
+        plan = (
+            Plan(topic=request.query, filters=filters)
+            if not request.plan
+            else make_plan(request.query, override=filters)
+        )
+        findings = research_mod.investigate(
+            request.query,
+            plan,
+            n=request.n,
+            use_hyde=request.hyde,
+            use_rerank=request.rerank,
+            conn=conn,
+            vectors=vectors,
+        )
+
+    results = findings.results
     text = ""
     if request.answer and results:
-        text = answer_mod.answer(
-            request.query, search_mod.context_for_answer(results)
-        )
+        text = answer_mod.answer(request.query, findings)
 
     return {
         "answer": text,
+        "intent": findings.plan.intent,
+        "coverage": findings.coverage.summary(),
+        "exhaustive": findings.exhaustive,
+        "total_matches": findings.total_matches,
+        "breakdown": findings.breakdown,
+        "breakdown_label": findings.breakdown_label,
+        "note": findings.note,
         "results": [
             {
                 "citation": r.citation,
@@ -84,7 +105,7 @@ def api_stats():
     return idx.read_meta()
 
 
-PAGE = """<!doctype html>
+PAGE = r"""<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
@@ -137,8 +158,20 @@ PAGE = """<!doctype html>
   label.check { display: inline-flex; align-items: center; gap: 5px; cursor: pointer; }
   #answerBox {
     background: var(--accent-soft); border: 1px solid var(--line);
-    border-radius: 10px; padding: 16px 18px; margin-bottom: 26px;
-    font-size: 15.5px; white-space: pre-wrap;
+    border-radius: 10px; padding: 4px 20px 14px; margin-bottom: 26px;
+    font-size: 15.5px;
+  }
+  #answerBox h2 {
+    font-size: 15px; margin: 18px 0 6px; letter-spacing: -0.01em;
+    font-family: ui-sans-serif, system-ui, sans-serif;
+  }
+  #answerBox h2:first-child { margin-top: 14px; }
+  #answerBox p { margin: 0 0 10px; }
+  #answerBox ul { margin: 0 0 10px; padding-left: 20px; }
+  #answerBox li { margin: 3px 0; }
+  #answerBox code {
+    font-family: ui-monospace, SFMono-Regular, monospace; font-size: 13px;
+    background: var(--panel); padding: 1px 4px; border-radius: 3px;
   }
   .card { border-top: 1px solid var(--line); padding: 18px 0; }
   .cite {
@@ -161,6 +194,25 @@ PAGE = """<!doctype html>
     color: var(--muted);
   }
   .status { color: var(--muted); font-size: 14px; padding: 20px 0; }
+  .coverage {
+    font-family: ui-sans-serif, system-ui, sans-serif; font-size: 12px;
+    color: var(--muted); margin-bottom: 18px;
+  }
+  .chip {
+    display: inline-block; background: var(--accent-soft); color: var(--accent);
+    border: 1px solid var(--line); border-radius: 999px;
+    padding: 1px 9px; margin-right: 7px; font-weight: 600;
+  }
+  .note {
+    font-family: ui-sans-serif, system-ui, sans-serif; font-size: 12.5px;
+    color: var(--muted); border-left: 2px solid var(--accent);
+    padding: 2px 0 2px 10px; margin: 0 0 18px;
+  }
+  .dist { margin: 0 0 22px; font-family: ui-sans-serif, system-ui, sans-serif; font-size: 12px; }
+  .dist div { display: flex; align-items: center; gap: 8px; margin: 2px 0; }
+  .dist span.k { width: 150px; color: var(--muted); text-align: right; }
+  .dist span.n { width: 56px; color: var(--muted); }
+  .dist i { background: var(--accent); height: 9px; border-radius: 2px; display: block; }
 </style>
 </head>
 <body>
@@ -170,7 +222,7 @@ PAGE = """<!doctype html>
 </header>
 <main>
   <form id="f">
-    <input type="text" id="q" placeholder="Describe what was said&hellip;" autofocus autocomplete="off">
+    <input type="text" id="q" placeholder="Ask a question, describe a passage, or type a reference&hellip;" autofocus autocomplete="off">
     <button type="submit" id="go">Search</button>
   </form>
 
@@ -189,6 +241,9 @@ PAGE = """<!doctype html>
   </div>
 
   <div id="answerBox" hidden></div>
+  <div id="coverage" class="coverage" hidden></div>
+  <div id="note" class="note" hidden></div>
+  <div id="dist" class="dist" hidden></div>
   <div id="out"></div>
 </main>
 
@@ -196,6 +251,32 @@ PAGE = """<!doctype html>
 const $ = id => document.getElementById(id);
 const esc = s => s.replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const num = el => el.value ? parseInt(el.value, 10) : null;
+
+// The per-intent prompts produce structured answers — headings for a thematic
+// survey, lists for an enumeration — so the panel has to render Markdown
+// rather than show the asterisks. Escape first, format second: nothing the
+// model writes can become live markup.
+function md(src) {
+  const inline = t => esc(t)
+    .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+    .replace(/(^|[^*])\*([^*\n]+)\*/g, '$1<em>$2</em>')
+    .replace(/`([^`]+)`/g, '<code>$1</code>');
+
+  const out = [];
+  let list = null;
+  for (const raw of src.split('\n')) {
+    const line = raw.trimEnd();
+    const heading = line.match(/^#{1,6}\s+(.*)$/);
+    const bullet = line.match(/^\s*[-*]\s+(.*)$/);
+
+    if (bullet) { (list ??= []).push(inline(bullet[1])); continue; }
+    if (list) { out.push('<ul>' + list.map(i => `<li>${i}</li>`).join('') + '</ul>'); list = null; }
+    if (heading) { out.push(`<h2>${inline(heading[1])}</h2>`); continue; }
+    if (line.trim()) out.push(`<p>${inline(line)}</p>`);
+  }
+  if (list) out.push('<ul>' + list.map(i => `<li>${i}</li>`).join('') + '</ul>');
+  return out.join('');
+}
 
 $('f').addEventListener('submit', async e => {
   e.preventDefault();
@@ -224,9 +305,36 @@ $('f').addEventListener('submit', async e => {
     const data = await res.json();
 
     if (data.answer) {
-      $('answerBox').textContent = data.answer;
+      $('answerBox').innerHTML = md(data.answer);
       $('answerBox').hidden = false;
     }
+
+    // Which strategy ran, and what the answer actually got to see.
+    let cov = `<span class="chip">${esc(data.intent || 'lookup')}</span>`;
+    if (data.exhaustive && data.total_matches != null) {
+      cov += `complete: all ${data.total_matches.toLocaleString()} matches &middot; `;
+    } else if (data.total_matches != null) {
+      cov += `${data.total_matches.toLocaleString()} matches, showing examples &middot; `;
+    }
+    cov += esc(data.coverage || '');
+    $('coverage').innerHTML = cov;
+    $('coverage').hidden = false;
+
+    if (data.note) {
+      $('note').textContent = data.note;
+      $('note').hidden = false;
+    } else { $('note').hidden = true; }
+
+    if (data.breakdown && data.breakdown.length) {
+      const max = Math.max(...data.breakdown.map(r => r[1]));
+      $('dist').innerHTML =
+        `<p style="margin:0 0 6px"><strong>${esc(data.breakdown_label || '')}</strong></p>` +
+        data.breakdown.map(([k, n]) =>
+          `<div><span class="k">${esc(String(k))}</span>` +
+          `<i style="width:${Math.max(2, 240 * n / max)}px"></i>` +
+          `<span class="n">${n.toLocaleString()}</span></div>`).join('');
+      $('dist').hidden = false;
+    } else { $('dist').hidden = true; }
 
     if (!data.results.length) {
       $('out').innerHTML = '<p class="status">No matches.</p>';
