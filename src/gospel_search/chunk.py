@@ -38,7 +38,7 @@ class Document:
 @dataclass
 class Chunk:
     doc_key: str
-    kind: str  # "talk" | "verse" | "summary"
+    kind: str  # "talk" | "verse"
     anchor: str  # paragraph id or verse number — the deep-link target
     ordinal: int
     citation: str
@@ -136,21 +136,5 @@ def chunk_chapter(chapter) -> tuple[Document, list[Chunk]]:
             )
         )
 
-    # The head-note is its own coarse chunk: it answers "which chapter is about
-    # X" directly, which no single verse window does well.
-    if chapter.summary:
-        chunks.append(
-            Chunk(
-                doc_key=chapter.uri,
-                kind="summary",
-                anchor="summary",
-                ordinal=-1,
-                citation=f"{chapter.citation} (chapter summary)",
-                url=chapter.url,
-                display_text=chapter.summary,
-                window_text=chapter.summary,
-                embed_text=f"{header} — chapter summary\n\n{chapter.summary}",
-            )
-        )
 
     return document, chunks

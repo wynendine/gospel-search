@@ -65,7 +65,7 @@ class Filters:
         if self.source == "talks":
             clauses.append("c.kind = 'talk'")
         elif self.source == "scriptures":
-            clauses.append("c.kind IN ('verse', 'summary')")
+            clauses.append("c.kind = 'verse'")
         if self.volume:
             clauses.append("d.volume LIKE ?")
             params.append(f"%{self.volume}%")
@@ -158,7 +158,7 @@ def hyde(query: str) -> str:
 
 _columns: "Columns | None" = None
 
-KIND_CODES = {"talk": 0, "verse": 1, "summary": 2}
+KIND_CODES = {"talk": 0, "verse": 1}
 
 
 def filter_columns(conn) -> "Columns":
@@ -238,9 +238,7 @@ def dense(conn, vectors, query_vector, filters: Filters, k: int = DENSE_K):
         if filters.source == "talks":
             mask &= cols.kind == KIND_CODES["talk"]
         elif filters.source == "scriptures":
-            mask &= (cols.kind == KIND_CODES["verse"]) | (
-                cols.kind == KIND_CODES["summary"]
-            )
+            mask &= cols.kind == KIND_CODES["verse"]
         # Scripture rows carry year 0, so a date bound excludes them — which is
         # the right reading of "conference talks after 2010".
         if filters.after:

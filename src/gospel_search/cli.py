@@ -40,7 +40,7 @@ def cmd_build(args) -> None:
 
     if args.only in (None, "scriptures"):
         build_mod.build_scriptures(
-            conn, summaries=args.summaries, verify=not args.no_verify
+            conn, verify=not args.no_verify
         )
     if args.only in (None, "talks"):
         periods = None
@@ -333,9 +333,6 @@ def main(argv=None) -> None:
     build = sub.add_parser("build", help="ingest, embed, and index the corpus")
     build.add_argument("--only", choices=["talks", "scriptures"])
     build.add_argument("--since", type=int, help="only conferences from this year on")
-    build.add_argument(
-        "--summaries", action="store_true", help="also index chapter head-notes"
-    )
     build.add_argument("--no-embed", action="store_true", help="ingest only")
     build.add_argument("--no-verify", action="store_true", help="skip the URL check")
     build.add_argument(

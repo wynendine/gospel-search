@@ -10,7 +10,7 @@ from . import index as idx
 from .sources import church_api, conference, scriptures
 
 
-def build_scriptures(conn, *, summaries: bool = False, verify: bool = True) -> int:
+def build_scriptures(conn, *, verify: bool = True) -> int:
     print("Downloading the scriptures CSV...")
     scriptures.download_csv()
 
@@ -24,12 +24,6 @@ def build_scriptures(conn, *, summaries: bool = False, verify: bool = True) -> i
             raise SystemExit("URL slugs do not resolve:\n  " + "\n  ".join(failures))
         print("  all volumes resolve")
 
-    if summaries:
-        print(f"Fetching {len(chapters)} chapter summaries...")
-        church_api.prefetch([c.uri for c in chapters], progress=_bar("chapters"))
-        print()
-        for chapter in chapters:
-            chapter.summary = scriptures.fetch_summary(chapter)
 
     total = 0
     for chapter in chapters:

@@ -121,7 +121,7 @@ def lookup(conn, ref: Reference, limit: int = 60):
     if ref.verse is None:
         rows = conn.execute(
             """SELECT c.id FROM chunks c JOIN documents d ON d.id = c.doc_id
-               WHERE d.book = ? AND d.chapter = ? AND c.kind IN ('verse','summary')
+               WHERE d.book = ? AND d.chapter = ? AND c.kind = 'verse'
                ORDER BY c.ordinal LIMIT ?""",
             (ref.book, ref.chapter, limit),
         ).fetchall()

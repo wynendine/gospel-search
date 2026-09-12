@@ -57,7 +57,6 @@ ANTHROPIC_API_KEY=...   # planning, query expansion, reranking, answers
 ```bash
 gospel build --only scriptures     # ~1 min crawl, ~4 min embed, ~$0.65
 gospel build --only talks          # ~20 min crawl, ~27 min embed, ~$4.45
-gospel build --summaries           # + chapter head-notes, ~7 min, ~$0.01
 gospel build --citations           # + citation graph, from cached pages, free
 ```
 
@@ -219,7 +218,7 @@ changed document, carrying existing vectors across so it never re-embeds.
 
 | | hit@1 | recall@10 | MRR |
 |---|---|---|---|
-| full pipeline | **91%** | **100%** | **~0.95** |
+| full pipeline | **86-91%** | **100%** | **0.92-0.95** |
 | `--no-hyde --no-rerank` | 59% | 95% | 0.703 |
 
 The second row costs almost nothing to run and is the right way to judge a

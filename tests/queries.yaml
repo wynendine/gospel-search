@@ -57,11 +57,10 @@
   expect: [Matthew 6:24, 3 Nephi 13:24]
   source: scriptures
 
-# --- Chapter-level: which chapter is about X (needs --summaries) -----------
-# These ask for a *chapter*, so the right answer is the chapter head-note, not
-# a verse buried inside it. Without `build --summaries` they fall back to
-# verses and mostly still pass — the point of these cases is that the answer
-# comes back at the right granularity.
+# --- Chapter-level: which chapter is about X -------------------------------
+# These once relied on indexed chapter head-notes. Head-notes are editorial
+# study aids rather than scripture, so they were dropped and these cases now
+# answer from the verses themselves — all six still resolve at rank 1.
 - query: which chapter is the sermon on the mount
   expect: [Matthew 5, 3 Nephi 12]
   source: scriptures

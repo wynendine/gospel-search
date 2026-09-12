@@ -270,7 +270,20 @@ def compact(conn: sqlite3.Connection) -> tuple[int, int]:
     before = vector_rows(conn)
     ids = [row[0] for row in conn.execute("SELECT id FROM chunks ORDER BY id")]
     after = len(ids)
-    if before == after:
+
+    # The id space can be tidy while the vector file is not. Deleting the
+    # chunks with the highest ids (dropping chapter summaries, say) leaves
+    # MAX(id) == COUNT(*) with no gaps at all, yet the array still carries the
+    # deleted rows — and those stale vectors keep scoring. Three of them were
+    # observed taking slots in a dense top-100 after the summaries were
+    # removed, which is a wrong answer, not merely wasted space.
+    stored = 0
+    if VECTORS_PATH.exists():
+        existing = np.lib.format.open_memmap(VECTORS_PATH, mode="r")
+        stored = existing.shape[0]
+        del existing
+
+    if before == after and stored == after:
         return before, after
 
     carried = None

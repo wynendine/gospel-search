@@ -85,7 +85,10 @@ def test_filters() -> None:
     check("filters: year becomes a date bound", params[1] == "2010-01-01")
 
     where, _ = Filters(source="scriptures").sql()
-    check("filters: scriptures covers verses and summaries", "'verse'" in where and "'summary'" in where)
+    # Chapter head-notes are not indexed: they are editorial study aids, not
+    # scripture, so a scripture search returns the text itself.
+    check("filters: scriptures means verses", "'verse'" in where)
+    check("filters: scriptures excludes head-notes", "summary" not in where)
 
 
 # --- Chunk windowing -------------------------------------------------------

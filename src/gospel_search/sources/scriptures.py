@@ -2,8 +2,10 @@
 
 One 13.7 MB download gives all 41,995 verses across 87 books, with citations
 ("Alma 32:21") already formatted and URL slugs that match the live site.
-Chapter study summaries are not in the CSV — those come from the study API as
-an optional second pass.
+Chapter head-notes are deliberately not indexed. They are editorial study aids
+written for readers, not scripture, and a search of the scriptures should
+return the text rather than someone's precis of it. `fetch_summary` is kept
+because the head-note is still useful context when reading a chapter.
 """
 
 from __future__ import annotations
