@@ -29,6 +29,7 @@ from .config import (
 )
 from . import embed
 from . import index as idx
+from . import usage
 
 _anthropic: anthropic.Anthropic | None = None
 
@@ -141,12 +142,14 @@ Query: {query}"""
 
 def hyde(query: str) -> str:
     """A hypothetical passage, embedded alongside the query to sharpen recall."""
+    usage.check_budget()
     response = claude().messages.create(
         model=config.HYDE_MODEL,
         max_tokens=400,
         output_config=config.output_config(config.HYDE_MODEL, effort="low"),
         messages=[{"role": "user", "content": HYDE_PROMPT.format(query=query)}],
     )
+    usage.record_response("hyde", config.HYDE_MODEL, response)
     return "".join(b.text for b in response.content if b.type == "text").strip()
 
 
@@ -419,6 +422,7 @@ def rerank(query: str, results: list[Result], k: int | None = None) -> list[Resu
     candidates = results[:k]
     if not candidates:
         return results
+    usage.check_budget()
 
     passages = "\n\n".join(
         f"[{i}] {r.citation}\n{r.display_text[:config.RERANK_CHARS]}" for i, r in enumerate(candidates)
@@ -439,6 +443,7 @@ def rerank(query: str, results: list[Result], k: int | None = None) -> list[Resu
         ],
     )
 
+    usage.record_response("rerank", config.RERANK_MODEL, response)
     text = next(b.text for b in response.content if b.type == "text")
     scores = {
         item["id"]: float(item["score"]) for item in json.loads(text).get("scores", [])

@@ -405,6 +405,28 @@ def test_overflow_prompt() -> None:
           "narrowing" in text)
 
 
+# --- Usage accounting ------------------------------------------------------
+
+def test_usage_pricing() -> None:
+    from gospel_search import usage
+
+    # Published rates, per million tokens.
+    check("usage: opus 5 priced", abs(usage.price("claude-opus-5", 1_000_000, 0) - 5.0) < 1e-9)
+    check("usage: opus output priced", abs(usage.price("claude-opus-5", 0, 1_000_000) - 25.0) < 1e-9)
+    check("usage: haiku is 5x cheaper in", abs(usage.price("claude-haiku-4-5", 1_000_000, 0) - 1.0) < 1e-9)
+    check("usage: sonnet 5 priced", abs(usage.price("claude-sonnet-5", 1_000_000, 0) - 2.0) < 1e-9)
+
+    # An unrecognised model records as zero rather than inventing a number.
+    check("usage: unknown model is not guessed", usage.price("some-other-model", 10**6, 10**6) == 0.0)
+
+    # A real measured call: rerank at Opus was 8,658 in / 687 out.
+    cost = usage.price("claude-opus-5", 8658, 687)
+    check("usage: matches the measured rerank cost", abs(cost - 0.0605) < 0.0005, f"got {cost:.4f}")
+    # The same call on Haiku should be ~5x less.
+    haiku = usage.price("claude-haiku-4-5", 8658, 687)
+    check("usage: haiku rerank is ~5x cheaper", abs(cost / haiku - 5.0) < 0.01, f"ratio {cost/haiku:.2f}")
+
+
 def main() -> int:
     for test in (
         test_fts_query,
@@ -422,6 +444,7 @@ def main() -> int:
         test_thematic_grouping,
         test_enumerate_mode,
         test_overflow_prompt,
+        test_usage_pricing,
     ):
         print(f"\n{test.__name__}")
         test()

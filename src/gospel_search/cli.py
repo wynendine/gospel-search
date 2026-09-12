@@ -9,6 +9,7 @@ from dataclasses import dataclass
 
 from . import answer as answer_mod
 from . import cache as cache_mod
+from . import usage as usage_mod
 from . import build as build_mod
 from . import index as idx
 from . import research as research_mod
@@ -78,6 +79,7 @@ def cmd_search(args) -> None:
         _print_results(findings.results)
         return
 
+    usage_mod.start_run()
     flags = {
         "n": args.n, "hyde": not args.no_hyde, "rerank": not args.no_rerank,
         "answer": not args.no_answer, "plan": not args.no_plan,
@@ -102,13 +104,17 @@ def cmd_search(args) -> None:
         if args.explain:
             print(f"{DIM}     plan: {plan.describe()}{RESET}")
 
-    findings = research_mod.investigate(
-        args.query,
-        plan,
+    try:
+        findings = research_mod.investigate(
+            args.query,
+            plan,
         n=args.n,
-        use_hyde=not args.no_hyde,
-        use_rerank=not args.no_rerank,
-    )
+            use_hyde=not args.no_hyde,
+            use_rerank=not args.no_rerank,
+        )
+    except usage_mod.BudgetExceeded as limit:
+        print(f"{YELLOW}Monthly limit reached.{RESET} {limit}")
+        return
     results = findings.results
 
     if not results:
@@ -225,6 +231,31 @@ def cmd_cites(args) -> None:
             print(wrap(text[:280] + ("…" if len(text) > 280 else "")))
         print(f"{DIM}     {r['url']}{RESET}")
     print()
+
+
+def cmd_spend(args) -> None:
+    st = usage_mod.summary()
+    print(f"{BOLD}Spend{RESET}")
+    if st["limit"]:
+        pct = st["spent"] / st["limit"]
+        colour = YELLOW if pct > 0.8 else ""
+        print(f"  this month : {colour}${st['spent']:.2f} of ${st['limit']:.2f} ({pct:.0%}){RESET}")
+    else:
+        print(f"  this month : ${st['spent']:.2f}  (no limit set)")
+    print(f"  searches   : {st['searches']}")
+    if st["searches"]:
+        print(f"  per search : ${st['per_search']:.4f} average")
+
+    if st["by_stage"]:
+        print(f"\n{BOLD}By stage, this month{RESET}")
+        for r in st["by_stage"]:
+            print(f"  {r['stage']:<8}{r['calls']:>5} calls  ${r['cost']:>8.4f}")
+    if len(st["by_month"]) > 1:
+        print(f"\n{BOLD}By month{RESET}")
+        for r in st["by_month"]:
+            print(f"  {r['month']}  {r['calls']:>5} calls  ${r['cost']:>8.2f}")
+    if not st["limit"]:
+        print(f"\n{DIM}  Set a ceiling with:  export GOSPEL_MONTHLY_LIMIT=10{RESET}")
 
 
 def cmd_cache(args) -> None:
@@ -352,6 +383,9 @@ def main(argv=None) -> None:
         help="rank the most-cited verses instead",
     )
     cites.set_defaults(func=cmd_cites)
+
+    spend = sub.add_parser("spend", help="what this has actually cost")
+    spend.set_defaults(func=cmd_spend)
 
     cache = sub.add_parser("cache", help="inspect or clear the query cache")
     cache.add_argument("--clear", action="store_true", help="drop every cached answer")

@@ -14,6 +14,7 @@ from openai import OpenAI
 
 from .config import EMBED_BATCH, EMBED_DIMS, EMBED_MODEL, openai_key
 from . import index as idx
+from . import usage
 
 _client: OpenAI | None = None
 
@@ -40,6 +41,7 @@ def embed_texts(texts: list[str], *, model: str = EMBED_MODEL) -> np.ndarray:
             print(f"  embedding retry {attempt + 1}/4 in {wait}s ({type(exc).__name__})")
             time.sleep(wait)
 
+    usage.record_embedding(model, getattr(response.usage, 'total_tokens', 0) or 0)
     vectors = np.array([item.embedding for item in response.data], dtype="float32")
     norms = np.linalg.norm(vectors, axis=1, keepdims=True)
     return vectors / np.clip(norms, 1e-12, None)

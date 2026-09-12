@@ -19,6 +19,7 @@ from dataclasses import dataclass, field
 
 from . import config
 from .config import PLAN_MODEL
+from . import usage
 from .search import Filters, claude
 
 VOLUMES = [
@@ -130,6 +131,7 @@ class Plan:
 def plan(query: str, *, override: Filters | None = None) -> Plan:
     """Classify a query. Falls back to a plain lookup if the call fails."""
     try:
+        usage.check_budget()
         response = claude().messages.create(
             model=config.PLAN_MODEL,
             max_tokens=800,
@@ -147,6 +149,7 @@ def plan(query: str, *, override: Filters | None = None) -> Plan:
                 }
             ],
         )
+        usage.record_response("plan", config.PLAN_MODEL, response)
         text = next(b.text for b in response.content if b.type == "text")
         data = json.loads(text)
     except Exception as exc:  # noqa: BLE001 - planning degrades, it doesn't block

@@ -260,6 +260,24 @@ What each stage is worth, measured on the eval set rather than assumed:
 | Haiku rerank + plan + HyDE | 77% | 0.873 | $0.055 |
 | Haiku rerank, 25 candidates, 450 chars | — | 0.873 | $0.050 |
 
+### Seeing and capping it
+
+```bash
+gospel spend                          # what it has actually cost, by stage
+export GOSPEL_MONTHLY_LIMIT=10        # refuse to spend past $10 a month
+```
+
+Every call logs its real token counts, so `gospel spend` reports measurement
+rather than estimate, and cost per search is summed per run instead of dividing
+totals by a stage count. The ceiling stops the next call rather than the current
+one, so it can overshoot by a single call — it is a brake, not a hard cap.
+References, `gospel cites` and cached queries keep working after the limit,
+because they cost nothing.
+
+There is no flat-fee unlimited tier for API access, and Claude subscriptions
+cover Claude's own surfaces rather than powering your own application. At
+personal-study volume that is fine: 20-100 searches a month is $1-7.
+
 **Reranking is free to downgrade** — 0.006 MRR is inside the run-to-run noise
 of two identical Opus runs, and it cuts the bill 42%. Planning and HyDE are
 not: HyDE writes a passage in scriptural register, which is a generation task,

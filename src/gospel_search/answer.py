@@ -13,6 +13,7 @@ from __future__ import annotations
 
 from . import config
 from .config import ANSWER_MODEL
+from . import usage
 from .search import claude
 
 BASE = """You are helping someone study General Conference talks and the \
@@ -131,9 +132,11 @@ def answer(query: str, findings, *, model: str | None = None) -> str:
     if findings.note:
         prompt += f"\n\nImportant caveat you must convey: {findings.note}"
 
+    usage.check_budget()
     response = claude().messages.create(
         model=model,
         max_tokens=2500,
         messages=[{"role": "user", "content": prompt}],
     )
+    usage.record_response("answer", model, response)
     return "".join(b.text for b in response.content if b.type == "text").strip()
