@@ -28,6 +28,14 @@ Numbered passages retrieved for it:
 
 HONESTY = """
 - Cite every claim with the passage number in brackets, like [3].
+- **Always name the source in the prose as well as the bracket.** A bracket
+  alone is useless to someone who wants to look it up. For scripture give the
+  full reference — "Deuteronomy 29:12", never "the Old Testament" or
+  "Deuteronomy". For a talk give the speaker and the title. Write "Alma 32:21
+  teaches ... [4]", not "one passage teaches ... [4]".
+- When a passage is a talk that quotes scripture, the verses it cites are
+  listed after its heading. Name those references too when you lean on the
+  quotation — the reader wants the verse, not just the talk that used it.
 - Use only the passages given. If they do not support an answer, say so plainly \
 in one sentence rather than filling the gap from your own knowledge — an honest \
 miss is more useful than a confident wrong reference.
@@ -80,12 +88,54 @@ reader needs to know which they are getting.
 }
 
 
-def format_passages(results, groups=None) -> str:
+def cited_scriptures(conn, results) -> dict[int, list[str]]:
+    """Verses each talk passage quotes, from the citation graph.
+
+    A talk that quotes Deuteronomy arrives with the talk's citation but not the
+    verse — the reference lives in the talk's footnote, which is exactly what
+    the citation graph already recorded. Without this the answer can only say
+    "the Old Testament frames it identically", which is useless to someone who
+    wants to look it up.
+    """
+    if conn is None:
+        return {}
+    ids = [r.chunk_id for r in results if r.kind == "talk"]
+    if not ids:
+        return {}
+    placeholders = ",".join("?" * len(ids))
+    found: dict[int, list[str]] = {}
+    for row in conn.execute(
+        # Ordered by insertion, which is footnote order — the sequence the
+        # speaker actually used them in, and stable across runs.
+        f"""SELECT src_chunk_id, citation FROM citations
+            WHERE src_chunk_id IN ({placeholders}) ORDER BY id""",
+        ids,
+    ):
+        refs = found.setdefault(row["src_chunk_id"], [])
+        if row["citation"] not in refs:
+            refs.append(row["citation"])
+    return found
+
+
+def _header(index: int, r, refs: dict[int, list[str]]) -> str:
+    head = f"[{index}] {r.citation}"
+    if r.kind == "talk" and r.date:
+        head += f" — {r.date[:4]}"
+    quoted = refs.get(r.chunk_id)
+    if quoted:
+        head += f"\n    quotes: {', '.join(quoted[:8])}"
+    return head
+
+
+def format_passages(results, groups=None, conn=None) -> str:
     """Number passages for citation, grouped when the intent has groups.
 
     Comparisons group by person, thematic surveys by facet. Numbering runs
     across the whole set so a citation means the same thing either way.
     """
+    everything = [r for items in groups.values() for r in items] if groups else results
+    refs = cited_scriptures(conn, everything)
+
     if groups:
         blocks, index = [], 1
         for label, items in groups.items():
@@ -93,19 +143,17 @@ def format_passages(results, groups=None) -> str:
                 continue
             blocks.append(f"--- {label} ---")
             for r in items:
-                blocks.append(f"[{index}] {r.citation}\n{r.window_text}")
+                blocks.append(f"{_header(index, r, refs)}\n{r.window_text}")
                 index += 1
         return "\n\n".join(blocks)
 
     return "\n\n".join(
-        f"[{i}] {r.citation}"
-        + (f" — {r.date[:4]}" if r.kind == "talk" and r.date else "")
-        + f"\n{r.window_text}"
+        f"{_header(i, r, refs)}\n{r.window_text}"
         for i, r in enumerate(results, start=1)
     )
 
 
-def answer(query: str, findings, *, model: str | None = None) -> str:
+def answer(query: str, findings, *, model: str | None = None, conn=None) -> str:
     if not findings.results:
         return "Nothing in the index matched that query."
 
@@ -114,7 +162,7 @@ def answer(query: str, findings, *, model: str | None = None) -> str:
     prompt = (
         BASE.format(
             query=query,
-            passages=format_passages(findings.results, findings.groups),
+            passages=format_passages(findings.results, findings.groups, conn),
         )
         + "\n"
         + INSTRUCTIONS.get(intent, INSTRUCTIONS["lookup"])

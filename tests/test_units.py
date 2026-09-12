@@ -355,8 +355,10 @@ def test_thematic_grouping() -> None:
     from gospel_search.answer import format_passages
 
     class Fake:
+        _next = [1]
         def __init__(self, cite, text):
             self.citation, self.window_text, self.kind, self.date = cite, text, "talk", "2020-04-01"
+            self.chunk_id = Fake._next[0]; Fake._next[0] += 1
 
     groups = {
         "missionary work": [Fake("A 1:1", "alpha")],
@@ -427,6 +429,53 @@ def test_usage_pricing() -> None:
     check("usage: haiku rerank is ~5x cheaper", abs(cost / haiku - 5.0) < 0.01, f"ratio {cost/haiku:.2f}")
 
 
+# --- Citations inside the synthesis ----------------------------------------
+# A bracket alone is useless to someone who wants to look the passage up.
+
+def test_answer_references() -> None:
+    import sqlite3
+    from gospel_search import answer as a
+    from gospel_search.search import Result
+
+    check("answer: prompt demands the reference in prose",
+          "name the source in the prose" in a.HONESTY.lower() or
+          "Always name the source in the prose" in a.HONESTY)
+    check("answer: prompt rejects a bare book name",
+          'never "the Old Testament"' in a.HONESTY)
+    check("answer: prompt covers verses a talk quotes",
+          "quotes scripture" in a.HONESTY)
+
+    def r(cid, kind, cite):
+        return Result(chunk_id=cid, doc_id=1, citation=cite, url="", speaker="S",
+                      date="2013-04-01", kind=kind, title="T",
+                      display_text="d", window_text="w")
+
+    conn = sqlite3.connect(":memory:"); conn.row_factory = sqlite3.Row
+    idx.init(conn)
+    conn.executemany(
+        """INSERT INTO citations (src_doc_id, src_chunk_id, tgt_doc_id, tgt_chunk_id,
+                                  citation, origin) VALUES (?,?,?,?,?,?)""",
+        [(1, 7, None, None, "Mark 9:24", "footnote"),
+         (1, 7, None, None, "Alma 32:27", "footnote"),
+         (1, 7, None, None, "Mark 9:24", "inline")],   # duplicate, must collapse
+    )
+
+    refs = a.cited_scriptures(conn, [r(7, "talk", "Holland, T (2013)")])
+    check("answer: collects a talk's cited verses", refs.get(7) == ["Mark 9:24", "Alma 32:27"], f"got {refs}")
+
+    out = a.format_passages([r(7, "talk", "Holland, T (2013)")], None, conn)
+    check("answer: header lists the quoted verses", "quotes: Mark 9:24, Alma 32:27" in out, out[:120])
+
+    # A scripture passage carries its reference already; no lookup needed.
+    out = a.format_passages([r(9, "verse", "Alma 32:21")], None, conn)
+    check("answer: scripture keeps its own citation", out.startswith("[1] Alma 32:21"))
+    check("answer: no quotes line without citations", "quotes:" not in out)
+
+    # Works with no connection at all (the web path used to pass none).
+    check("answer: degrades without a connection",
+          a.format_passages([r(7, "talk", "X")], None, None).startswith("[1] X"))
+
+
 def main() -> int:
     for test in (
         test_fts_query,
@@ -445,6 +494,7 @@ def main() -> int:
         test_enumerate_mode,
         test_overflow_prompt,
         test_usage_pricing,
+        test_answer_references,
     ):
         print(f"\n{test.__name__}")
         test()

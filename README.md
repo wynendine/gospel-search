@@ -131,6 +131,15 @@ found a passage. Stopwords are dropped from the lexical query — terms are OR-e
 so leaving them in made BM25's top hits share no content word with the question
 (hit@1 45% → 59%).
 
+**Answers name their sources, not just bracket numbers.** A `[4]` is useless to
+someone who wants to look the passage up, so the synthesis is required to write
+the reference into the prose — "Alma 32:21", never "the Old Testament". When a
+retrieved passage is a *talk* that quotes scripture, the verses it cites are
+pulled from the citation graph and handed to the model alongside it, because
+otherwise the reference is buried in the talk's footnote and the answer can
+only gesture at "the Old Testament". That is how a covenant question comes back
+naming Exodus 20:12 and D&C 130:20-21 rather than the talks that quoted them.
+
 **Reranking is the biggest quality lever after chunking.** The fused top-10 and
 the reranked top-10 are routinely different lists.
 

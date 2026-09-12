@@ -70,7 +70,7 @@ def api_search(request: Query):
     results = findings.results
     text = ""
     if request.answer and results:
-        text = answer_mod.answer(request.query, findings)
+        text = answer_mod.answer(request.query, findings, conn=conn)
 
     return {
         "answer": text,

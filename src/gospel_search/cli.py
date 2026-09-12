@@ -123,7 +123,7 @@ def cmd_search(args) -> None:
 
     text = ""
     if not args.no_answer:
-        text = answer_mod.answer(args.query, findings)
+        text = answer_mod.answer(args.query, findings, conn=conn)
         print(f"\n{BOLD}{text}{RESET}\n")
         print(DIM + "─" * 88 + RESET)
 
