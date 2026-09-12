@@ -26,12 +26,23 @@ EMBED_DIMS = 1024
 EMBED_BATCH = 256
 
 # --- Claude ----------------------------------------------------------------
-# Each stage is set independently, because they are not the same kind of work.
-# Synthesis is the one that has to reason over a dozen passages and write
-# something worth reading; planning, query expansion and reranking are narrow
-# judgment tasks. Override any of them per-run with an env var, which is how
-# the cost/quality numbers in the README were measured:
+# Every stage runs on Opus 5. Cheaper models were measured at each stage rather
+# than assumed, and none of them held up:
 #
+#   HyDE on Haiku       hit@1 91% -> 77%   it writes a passage in scriptural
+#                                          register, which is generation work
+#   planning on Haiku   hit@1 91% -> 86%
+#   rerank on Haiku     0.941, 0.924, 0.827 MRR across three runs
+#
+# The rerank result is the cautionary one. A single run came back at 0.941 —
+# inside the Opus spread — and that one sample was very nearly taken as proof
+# it was free. Two more runs showed the real problem is variance: Haiku's
+# reranking is not slightly worse, it is *inconsistent*, and a search tool that
+# is excellent two times in three is worse than one that is merely very good
+# every time. At a few dollars a month the saving does not buy anything worth
+# having.
+#
+# Override per run if you want to re-measure:
 #   GOSPEL_RERANK_MODEL=claude-haiku-4-5 gospel eval
 ANSWER_MODEL = os.environ.get("GOSPEL_ANSWER_MODEL", "claude-opus-5")
 RERANK_MODEL = os.environ.get("GOSPEL_RERANK_MODEL", "claude-opus-5")
