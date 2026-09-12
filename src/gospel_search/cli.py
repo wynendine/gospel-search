@@ -4,8 +4,11 @@ from __future__ import annotations
 
 import argparse
 import textwrap
+import time
+from dataclasses import dataclass
 
 from . import answer as answer_mod
+from . import cache as cache_mod
 from . import build as build_mod
 from . import index as idx
 from . import research as research_mod
@@ -14,6 +17,14 @@ from .config import MAX_PER_DOC
 from .plan import Plan, plan as make_plan
 
 BOLD, DIM, CYAN, YELLOW, RESET = "\033[1m", "\033[2m", "\033[36m", "\033[33m", "\033[0m"
+
+
+@dataclass
+class _Row:
+    """A cached result, shaped enough for the printer."""
+    citation: str; url: str; speaker: str; date: str
+    rerank: float | None; dense_rank: int | None; lexical_rank: int | None
+    display_text: str
 
 
 def wrap(text: str, width: int = 88, indent: str = "     ") -> str:
@@ -67,6 +78,23 @@ def cmd_search(args) -> None:
         _print_results(findings.results)
         return
 
+    flags = {
+        "n": args.n, "hyde": not args.no_hyde, "rerank": not args.no_rerank,
+        "answer": not args.no_answer, "plan": not args.no_plan,
+        "mpd": args.max_per_doc,
+    }
+    ckey = cache_mod.key(args.query, filters, flags)
+    cached = None if args.fresh else cache_mod.get(ckey)
+    if cached:
+        age = time.time() - cached["_cached_at"]
+        unit = f"{age/86400:.0f}d" if age > 86400 else f"{age/3600:.0f}h" if age > 3600 else f"{age/60:.0f}m"
+        if cached["answer"]:
+            print(f"\n{BOLD}{cached['answer']}{RESET}\n")
+            print(DIM + "─" * 88 + RESET)
+        print(f"{DIM}     [{cached['intent']}] {cached['coverage']}  ·  cached {unit} ago (free){RESET}")
+        _print_results([_Row(**r) for r in cached["results"]])
+        return
+
     if args.no_plan:
         plan = Plan(topic=args.query, filters=filters)
     else:
@@ -87,6 +115,7 @@ def cmd_search(args) -> None:
         print("No matches.")
         return
 
+    text = ""
     if not args.no_answer:
         text = answer_mod.answer(args.query, findings)
         print(f"\n{BOLD}{text}{RESET}\n")
@@ -94,6 +123,19 @@ def cmd_search(args) -> None:
 
     # What the answer actually saw. Without this the output reads like a survey
     # of the whole corpus regardless of how thin the evidence was.
+    cache_mod.put(ckey, args.query, {
+        "answer": text if not args.no_answer else "",
+        "intent": plan.intent,
+        "coverage": findings.coverage.summary(),
+        "results": [
+            {
+                "citation": r.citation, "url": r.url, "speaker": r.speaker,
+                "date": r.date, "rerank": r.rerank, "dense_rank": r.dense_rank,
+                "lexical_rank": r.lexical_rank, "display_text": r.display_text,
+            } for r in results
+        ],
+    })
+
     line = findings.coverage.summary()
     if findings.exhaustive:
         line = f"complete: all {findings.total_matches} matches · " + line
@@ -183,6 +225,24 @@ def cmd_cites(args) -> None:
             print(wrap(text[:280] + ("…" if len(text) > 280 else "")))
         print(f"{DIM}     {r['url']}{RESET}")
     print()
+
+
+def cmd_cache(args) -> None:
+    if args.clear:
+        n = cache_mod.clear()
+        print(f"Cleared {n:,} cached answers.")
+        return
+    if args.prune:
+        n = cache_mod.clear(stale_only=True)
+        print(f"Removed {n:,} answers from superseded index builds.")
+        return
+    st = cache_mod.stats()
+    print(f"{BOLD}Query cache{RESET}")
+    print(f"  entries : {st['entries']:,}")
+    print(f"  size    : {st['bytes']/1e6:.1f} MB")
+    if st["stale"]:
+        print(f"  {YELLOW}stale (older index): {st['stale']:,} — `gospel cache --prune`{RESET}")
+    print(f"\n  Each hit saves a full search (~$0.11 and ~20s).")
 
 
 def cmd_stats(args) -> None:
@@ -276,6 +336,9 @@ def main(argv=None) -> None:
     )
     search.add_argument("--no-hyde", action="store_true")
     search.add_argument("--no-rerank", action="store_true")
+    search.add_argument(
+        "--fresh", action="store_true", help="ignore the cache and re-run the query"
+    )
     search.set_defaults(func=cmd_search)
 
     cites = sub.add_parser("cites", help="which talks cite a scripture")
@@ -289,6 +352,11 @@ def main(argv=None) -> None:
         help="rank the most-cited verses instead",
     )
     cites.set_defaults(func=cmd_cites)
+
+    cache = sub.add_parser("cache", help="inspect or clear the query cache")
+    cache.add_argument("--clear", action="store_true", help="drop every cached answer")
+    cache.add_argument("--prune", action="store_true", help="drop answers from older index builds")
+    cache.set_defaults(func=cmd_cache)
 
     stats = sub.add_parser("stats", help="what's in the index")
     stats.set_defaults(func=cmd_stats)

@@ -15,6 +15,7 @@ from dataclasses import dataclass, field
 import anthropic
 import numpy as np
 
+from . import config
 from .config import (
     ANSWER_K,
     DENSE_K,
@@ -141,9 +142,9 @@ Query: {query}"""
 def hyde(query: str) -> str:
     """A hypothetical passage, embedded alongside the query to sharpen recall."""
     response = claude().messages.create(
-        model=HYDE_MODEL,
+        model=config.HYDE_MODEL,
         max_tokens=400,
-        output_config={"effort": "low"},
+        output_config=config.output_config(config.HYDE_MODEL, effort="low"),
         messages=[{"role": "user", "content": HYDE_PROMPT.format(query=query)}],
     )
     return "".join(b.text for b in response.content if b.type == "text").strip()
@@ -413,21 +414,23 @@ RERANK_SCHEMA = {
 }
 
 
-def rerank(query: str, results: list[Result], k: int = RERANK_K) -> list[Result]:
+def rerank(query: str, results: list[Result], k: int | None = None) -> list[Result]:
+    k = config.RERANK_K if k is None else k
     candidates = results[:k]
     if not candidates:
         return results
 
     passages = "\n\n".join(
-        f"[{i}] {r.citation}\n{r.display_text[:700]}" for i, r in enumerate(candidates)
+        f"[{i}] {r.citation}\n{r.display_text[:config.RERANK_CHARS]}" for i, r in enumerate(candidates)
     )
     response = claude().messages.create(
-        model=RERANK_MODEL,
+        model=config.RERANK_MODEL,
         max_tokens=4000,
-        output_config={
-            "effort": "low",
-            "format": {"type": "json_schema", "schema": RERANK_SCHEMA},
-        },
+        output_config=config.output_config(
+            config.RERANK_MODEL,
+            effort="low",
+            format={"type": "json_schema", "schema": RERANK_SCHEMA},
+        ),
         messages=[
             {
                 "role": "user",

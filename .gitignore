@@ -18,3 +18,4 @@ next-env.d.ts
 # The corpus and the index: large, derived, and not ours to redistribute.
 # `gospel build` regenerates all of it from public sources.
 data/
+query_cache.db

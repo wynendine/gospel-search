@@ -225,9 +225,46 @@ assumption — phrases already worked when I thought they didn't; the eval case 
 chased turned out not to be a bug, but diagnosing it found a stopword problem
 worth 14 points of hit@1.
 
-Knobs live in `src/gospel_search/config.py`: retrieval depths, the RRF constant,
-window size, per-document caps, and model choices. Reranking is the step to
-point at `claude-haiku-4-5` if per-query latency starts to annoy you.
+Knobs live in `src/gospel_search/config.py`: retrieval depths, the RRF
+constant, window size, per-document caps, and a model per stage. Every model
+and the rerank depth can be overridden per run with an env var, which is how
+the numbers below were measured:
+
+```bash
+GOSPEL_RERANK_MODEL=claude-haiku-4-5 gospel eval
+```
+
+## Cost
+
+A search is four Claude calls. Measured per query:
+
+| stage | cost | share |
+|---|---|---|
+| plan | $0.0103 | 9% |
+| HyDE | $0.0064 | 6% |
+| rerank | $0.0605 | 53% |
+| answer | $0.0369 | 32% |
+| **total** | **$0.114** | |
+
+References (`D&C 121:7`) and `gospel cites` are database lookups — instant and
+free. Repeated queries are cached and also free; `gospel cache` inspects it and
+`--fresh` bypasses it.
+
+What each stage is worth, measured on the eval set rather than assumed:
+
+| configuration | hit@1 | MRR | cost |
+|---|---|---|---|
+| all Opus 5 | 91% | 0.947 | $0.114 |
+| **Haiku rerank** | **91%** | **0.941** | **$0.066** |
+| Haiku rerank + plan | 86% | 0.909 | $0.058 |
+| Haiku rerank + plan + HyDE | 77% | 0.873 | $0.055 |
+| Haiku rerank, 25 candidates, 450 chars | — | 0.873 | $0.050 |
+
+**Reranking is free to downgrade** — 0.006 MRR is inside the run-to-run noise
+of two identical Opus runs, and it cuts the bill 42%. Planning and HyDE are
+not: HyDE writes a passage in scriptural register, which is a generation task,
+and cutting the rerank pool to 25 loses a case from recall entirely. Synthesis
+was never tested cheaper because it is the part you actually read.
 
 ## Layout
 

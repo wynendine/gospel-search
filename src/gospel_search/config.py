@@ -26,17 +26,35 @@ EMBED_DIMS = 1024
 EMBED_BATCH = 256
 
 # --- Claude ----------------------------------------------------------------
-# Synthesis and reranking both default to Opus 5. Reranking is the step to
-# point at claude-haiku-4-5 if per-query latency or cost ever gets annoying.
-ANSWER_MODEL = "claude-opus-5"
-RERANK_MODEL = "claude-opus-5"
-HYDE_MODEL = "claude-opus-5"
+# Each stage is set independently, because they are not the same kind of work.
+# Synthesis is the one that has to reason over a dozen passages and write
+# something worth reading; planning, query expansion and reranking are narrow
+# judgment tasks. Override any of them per-run with an env var, which is how
+# the cost/quality numbers in the README were measured:
+#
+#   GOSPEL_RERANK_MODEL=claude-haiku-4-5 gospel eval
+ANSWER_MODEL = os.environ.get("GOSPEL_ANSWER_MODEL", "claude-opus-5")
+RERANK_MODEL = os.environ.get("GOSPEL_RERANK_MODEL", "claude-opus-5")
+HYDE_MODEL = os.environ.get("GOSPEL_HYDE_MODEL", "claude-opus-5")
+
+# `effort` arrived with the 4.6 generation. Older models reject it outright, so
+# a stage pointed at one has to omit the parameter rather than send a default.
+NO_EFFORT_MODELS = ("claude-haiku-4-5", "claude-sonnet-4-5", "claude-3")
+
+
+def output_config(model: str, **fields) -> dict:
+    """output_config for a model, dropping `effort` where it isn't supported."""
+    if any(model.startswith(m) for m in NO_EFFORT_MODELS):
+        fields.pop("effort", None)
+    return fields
+
 
 # --- Retrieval -------------------------------------------------------------
 DENSE_K = 100  # candidates from the vector half
 LEXICAL_K = 100  # candidates from the BM25 half
 RRF_K = 60  # reciprocal-rank-fusion damping constant
-RERANK_K = 50  # fused candidates handed to the reranker
+RERANK_K = int(os.environ.get("GOSPEL_RERANK_K", "50"))  # candidates reranked
+RERANK_CHARS = int(os.environ.get("GOSPEL_RERANK_CHARS", "700"))
 ANSWER_K = 12  # reranked passages handed to the synthesizer
 
 # Cap on passages from any one talk or chapter. Ranking is per-chunk, so a
@@ -46,7 +64,7 @@ ANSWER_K = 12  # reranked passages handed to the synthesizer
 MAX_PER_DOC = 3
 
 # Query planning
-PLAN_MODEL = "claude-opus-5"
+PLAN_MODEL = os.environ.get("GOSPEL_PLAN_MODEL", "claude-opus-5")
 COMPARE_BUDGET = 8   # passages retrieved per entity in a comparison
 ENUMERATE_CAP = 200  # hard ceiling on an exhaustive listing
 THEMATIC_BUDGET = 6  # passages retrieved per facet of a thematic survey

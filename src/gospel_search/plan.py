@@ -17,6 +17,7 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass, field
 
+from . import config
 from .config import PLAN_MODEL
 from .search import Filters, claude
 
@@ -130,12 +131,13 @@ def plan(query: str, *, override: Filters | None = None) -> Plan:
     """Classify a query. Falls back to a plain lookup if the call fails."""
     try:
         response = claude().messages.create(
-            model=PLAN_MODEL,
+            model=config.PLAN_MODEL,
             max_tokens=800,
-            output_config={
-                "effort": "low",
-                "format": {"type": "json_schema", "schema": SCHEMA},
-            },
+            output_config=config.output_config(
+                config.PLAN_MODEL,
+                effort="low",
+                format={"type": "json_schema", "schema": SCHEMA},
+            ),
             messages=[
                 {
                     "role": "user",

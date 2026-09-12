@@ -11,6 +11,7 @@ weighted, or an enumeration, which needs a list rather than an argument.
 
 from __future__ import annotations
 
+from . import config
 from .config import ANSWER_MODEL
 from .search import claude
 
@@ -103,10 +104,11 @@ def format_passages(results, groups=None) -> str:
     )
 
 
-def answer(query: str, findings, *, model: str = ANSWER_MODEL) -> str:
+def answer(query: str, findings, *, model: str | None = None) -> str:
     if not findings.results:
         return "Nothing in the index matched that query."
 
+    model = model or config.ANSWER_MODEL
     intent = findings.plan.intent
     prompt = (
         BASE.format(
