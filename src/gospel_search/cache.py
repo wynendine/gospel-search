@@ -111,3 +111,43 @@ def clear(*, stale_only: bool = False) -> int:
     conn.commit()
     conn.close()
     return n
+
+
+def recent(limit: int = 40) -> list[dict]:
+    """Most recent distinct queries, newest first.
+
+    Backs the history list. Entries from a superseded index are still listed —
+    the question is worth re-asking even when its cached answer is retired —
+    but flagged so a click re-runs rather than replays something stale.
+    """
+    if not CACHE_PATH.exists():
+        return []
+    conn = _connect()
+    rows = conn.execute(
+        """SELECT query, corpus, created_at, payload FROM answers
+           ORDER BY created_at DESC LIMIT ?""",
+        (limit,),
+    ).fetchall()
+    conn.close()
+
+    signature = corpus_signature()
+    seen: set[str] = set()
+    out: list[dict] = []
+    for row in rows:
+        normalized = row["query"].strip().lower()
+        if normalized in seen:
+            continue
+        seen.add(normalized)
+        try:
+            intent = json.loads(row["payload"]).get("intent", "")
+        except json.JSONDecodeError:
+            intent = ""
+        out.append(
+            {
+                "query": row["query"],
+                "intent": intent,
+                "at": row["created_at"],
+                "fresh": row["corpus"] == signature,
+            }
+        )
+    return out

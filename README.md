@@ -83,6 +83,12 @@ gospel search "Alma 32:21"                        # exact verse, instant, free
 gospel serve                                      # web UI at localhost:8000
 ```
 
+The web UI keeps a **Recent searches** list under the search box — every query
+you have run, newest first, tagged with the strategy it used. Clicking one
+replays it from the cache, so revisiting a question costs nothing and returns
+instantly. Entries from a superseded index are dimmed and re-run rather than
+replayed.
+
 Scoping can be written into the question — "in the Book of Mormon", "since
 2015", "what did Nelson say" — and the planner extracts it. Explicit flags
 always win over what it infers.

@@ -7,6 +7,7 @@ from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 
 from . import answer as answer_mod
+from . import cache as cache_mod
 from . import index as idx
 from . import research as research_mod
 from . import search as search_mod
@@ -35,6 +36,12 @@ class Query(BaseModel):
     hyde: bool = True
     rerank: bool = True
     plan: bool = True
+    fresh: bool = False
+
+
+@app.get("/api/history")
+def api_history(limit: int = 40):
+    return {"queries": cache_mod.recent(limit)}
 
 
 @app.post("/api/search")
@@ -51,6 +58,22 @@ def api_search(request: Query):
     # planner picks the retrieval strategy. The UI used to call search()
     # straight through, which meant none of the intents reached the browser.
     findings = research_mod.resolve_reference(conn, request.query)
+
+    # References are already free; everything else is worth caching, which also
+    # gives the history list something to replay.
+    ckey = None
+    if findings is None:
+        flags = {
+            "n": request.n, "hyde": request.hyde, "rerank": request.rerank,
+            "answer": request.answer, "plan": request.plan,
+        }
+        ckey = cache_mod.key(request.query, filters, flags)
+        if not request.fresh:
+            hit = cache_mod.get(ckey)
+            if hit:
+                hit["cached"] = True
+                return hit
+
     if findings is None:
         plan = (
             Plan(topic=request.query, filters=filters)
@@ -72,7 +95,7 @@ def api_search(request: Query):
     if request.answer and results:
         text = answer_mod.answer(request.query, findings, conn=conn)
 
-    return {
+    payload = {
         "answer": text,
         "intent": findings.plan.intent,
         "coverage": findings.coverage.summary(),
@@ -98,6 +121,9 @@ def api_search(request: Query):
             for r in results
         ],
     }
+    if ckey:
+        cache_mod.put(ckey, request.query, payload)
+    return payload
 
 
 @app.get("/api/stats")
@@ -194,6 +220,29 @@ PAGE = r"""<!doctype html>
     color: var(--muted);
   }
   .status { color: var(--muted); font-size: 14px; padding: 20px 0; }
+  .hist { font-family: ui-sans-serif, system-ui, sans-serif; margin-bottom: 22px; }
+  .hist > summary {
+    cursor: pointer; font-size: 12px; color: var(--muted);
+    list-style: none; user-select: none; padding: 2px 0;
+  }
+  .hist > summary::-webkit-details-marker { display: none; }
+  .hist > summary::before { content: "\25B8 "; }
+  .hist[open] > summary::before { content: "\25BE "; }
+  .hist ol { list-style: none; margin: 8px 0 0; padding: 0; }
+  .hist li { display: flex; align-items: baseline; gap: 8px; padding: 3px 0; }
+  .hist button.q {
+    background: none; border: 0; padding: 0; cursor: pointer; text-align: left;
+    font: inherit; font-size: 13px; font-weight: 400; color: var(--accent);
+    text-decoration: none; flex: 1; min-width: 0;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .hist button.q:hover { text-decoration: underline; }
+  .hist .k {
+    font-size: 10.5px; color: var(--muted); border: 1px solid var(--line);
+    border-radius: 999px; padding: 0 6px; flex: none;
+  }
+  .hist .ago { font-size: 11px; color: var(--muted); flex: none; }
+  .hist .stale { opacity: .55; }
   .coverage {
     font-family: ui-sans-serif, system-ui, sans-serif; font-size: 12px;
     color: var(--muted); margin-bottom: 18px;
@@ -240,6 +289,11 @@ PAGE = r"""<!doctype html>
     <label class="check"><input type="checkbox" id="hyde" checked> hyde</label>
   </div>
 
+  <details class="hist" id="hist" hidden>
+    <summary id="histLabel">Recent searches</summary>
+    <ol id="histList"></ol>
+  </details>
+
   <div id="answerBox" hidden></div>
   <div id="coverage" class="coverage" hidden></div>
   <div id="note" class="note" hidden></div>
@@ -277,6 +331,42 @@ function md(src) {
   if (list) out.push('<ul>' + list.map(i => `<li>${i}</li>`).join('') + '</ul>');
   return out.join('');
 }
+
+const ago = t => {
+  const s = Date.now() / 1000 - t;
+  if (s < 3600) return `${Math.max(1, Math.round(s / 60))}m`;
+  if (s < 86400) return `${Math.round(s / 3600)}h`;
+  return `${Math.round(s / 86400)}d`;
+};
+
+// History is the query cache read back, so replaying an entry is free and
+// instant rather than a second paid search.
+async function loadHistory() {
+  try {
+    const res = await fetch('/api/history?limit=40');
+    if (!res.ok) return;
+    const { queries } = await res.json();
+    if (!queries.length) { $('hist').hidden = true; return; }
+
+    $('histLabel').textContent = `Recent searches (${queries.length})`;
+    $('histList').innerHTML = queries.map((h, i) => `
+      <li class="${h.fresh ? '' : 'stale'}">
+        <span class="k">${esc(h.intent || '?')}</span>
+        <button class="q" data-i="${i}" title="${esc(h.query)}">${esc(h.query)}</button>
+        <span class="ago">${ago(h.at)}</span>
+      </li>`).join('');
+
+    $('histList').querySelectorAll('button.q').forEach(b => {
+      b.addEventListener('click', () => {
+        $('q').value = queries[b.dataset.i].query;
+        $('f').requestSubmit();
+      });
+    });
+    $('hist').hidden = false;
+  } catch { /* history is a convenience; never let it break the page */ }
+}
+
+document.addEventListener('DOMContentLoaded', loadHistory);
 
 $('f').addEventListener('submit', async e => {
   e.preventDefault();
@@ -367,6 +457,7 @@ $('f').addEventListener('submit', async e => {
     $('out').innerHTML = `<p class="status">Error: ${esc(String(err))}</p>`;
   } finally {
     $('go').disabled = false;
+    loadHistory();
   }
 });
 </script>

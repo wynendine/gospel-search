@@ -479,6 +479,52 @@ def test_answer_references() -> None:
           a.format_passages([r(7, "talk", "X")], None, None).startswith("[1] X"))
 
 
+# --- Query cache and history ------------------------------------------------
+
+def test_cache_history() -> None:
+    import tempfile, time as _t
+    from pathlib import Path
+    from gospel_search import cache
+    from gospel_search.search import Filters
+
+    with tempfile.TemporaryDirectory() as tmp:
+        original = cache.CACHE_PATH
+        cache.CACHE_PATH = Path(tmp) / "c.db"
+        try:
+            # The key must separate anything that changes the answer.
+            f1, f2 = Filters(source="talks"), Filters(source="scriptures")
+            base = cache.key("faith", f1, {"n": 10})
+            check("cache: same inputs, same key", base == cache.key("faith", f1, {"n": 10}))
+            check("cache: filters change the key", base != cache.key("faith", f2, {"n": 10}))
+            check("cache: flags change the key", base != cache.key("faith", f1, {"n": 5}))
+            check("cache: query case is folded",
+                  cache.key("Faith", f1, {"n": 10}) == cache.key("faith  ", f1, {"n": 10}))
+
+            check("cache: miss returns nothing", cache.get(base) is None)
+            cache.put(base, "faith", {"answer": "a", "intent": "lookup", "results": []})
+            hit = cache.get(base)
+            check("cache: hit returns the payload", hit and hit["answer"] == "a")
+            check("cache: hit carries its age", hit and "_cached_at" in hit)
+
+            _t.sleep(0.01)
+            cache.put(cache.key("charity", f1, {"n": 10}), "charity",
+                      {"answer": "b", "intent": "enumerate", "results": []})
+
+            hist = cache.recent()
+            check("cache: history is newest first", [h["query"] for h in hist] == ["charity", "faith"], f"got {hist}")
+            check("cache: history carries the intent", hist[0]["intent"] == "enumerate")
+            check("cache: history marks entries fresh", all(h["fresh"] for h in hist))
+
+            # Same question asked twice should appear once.
+            cache.put(cache.key("charity", f2, {"n": 10}), "Charity", {"answer": "c", "intent": "x", "results": []})
+            check("cache: history de-duplicates a repeated question",
+                  sum(1 for h in cache.recent() if h["query"].lower() == "charity") == 1)
+
+            check("cache: clear empties it", cache.clear() >= 1 and cache.recent() == [])
+        finally:
+            cache.CACHE_PATH = original
+
+
 def main() -> int:
     for test in (
         test_fts_query,
@@ -498,6 +544,7 @@ def main() -> int:
         test_overflow_prompt,
         test_usage_pricing,
         test_answer_references,
+        test_cache_history,
     ):
         print(f"\n{test.__name__}")
         test()
